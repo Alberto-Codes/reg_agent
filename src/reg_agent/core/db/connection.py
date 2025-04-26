@@ -35,6 +35,7 @@ def connect_db(db_file: Path = DEFAULT_DB_FILE) -> duckdb.DuckDBPyConnection:
             source_path       VARCHAR PRIMARY KEY,
             filename          VARCHAR,
             blob              BLOB,
+            extracted_text    TEXT,      -- Store Markdown text extracted via OCR/parsing
             size_bytes        BIGINT,
             last_modified_ts  TIMESTAMPTZ
         );

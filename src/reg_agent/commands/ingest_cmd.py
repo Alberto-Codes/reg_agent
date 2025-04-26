@@ -12,9 +12,9 @@ log = structlog.get_logger()
 # Create a Typer app for this command module
 app = typer.Typer()
 
+
 @app.command(
-    name="run",
-    help="Ingest files from a source directory into the DuckDB database."
+    name="run", help="Ingest files from a source directory into the DuckDB database."
 )
 def run_ingestion(
     source_dir: Annotated[
@@ -33,17 +33,23 @@ def run_ingestion(
         typer.Option(
             writable=True,
             resolve_path=True,
-            help=f"Path to the DuckDB database file. Defaults to: {DEFAULT_DB_FILE}"
-        )
+            help=f"Path to the DuckDB database file. Defaults to: {DEFAULT_DB_FILE}",
+        ),
     ] = DEFAULT_DB_FILE,
 ):
     """CLI command to run the file ingestion pipeline."""
-    log.info("CLI command received", command="ingest run", source_dir=str(source_dir), db_path=str(db_path))
+    log.info(
+        "CLI command received",
+        command="ingest run",
+        source_dir=str(source_dir),
+        db_path=str(db_path),
+    )
     ingest_files(source_dir=source_dir, db_file=db_path)
     log.info("Ingestion command finished.")
 
+
 # You might add other ingest-related commands here later, like 'clear' or 'status'
 
-if __name__ == "__main__": # pragma: no cover
+if __name__ == "__main__":  # pragma: no cover
     # This allows running the command module directly for testing (optional)
-    app() 
+    app()

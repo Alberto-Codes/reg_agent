@@ -5,7 +5,7 @@ from .commands import ingest_cmd
 
 app = typer.Typer(
     name="reg-agent",
-    help="Agent framework for managing and interacting with a document knowledge base."
+    help="Agent framework for managing and interacting with a document knowledge base.",
 )
 
 # Add command groups (sub-applications)
@@ -15,5 +15,5 @@ app.add_typer(ingest_cmd.app, name="ingest", help="Commands for data ingestion."
 # from .commands import agent_cmd
 # app.add_typer(agent_cmd.app, name="agent")
 
-if __name__ == "__main__": # pragma: no cover
-    app() 
+if __name__ == "__main__":  # pragma: no cover
+    app()

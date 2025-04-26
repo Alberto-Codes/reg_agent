@@ -69,7 +69,9 @@ def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
                         blob_content = f.read()
 
                     # 3. Check if record exists before inserting
-                    existing_record = con.execute(check_sql, [source_path_str]).fetchone()
+                    existing_record = con.execute(
+                        check_sql, [source_path_str]
+                    ).fetchone()
 
                     if existing_record:
                         skipped_count += 1

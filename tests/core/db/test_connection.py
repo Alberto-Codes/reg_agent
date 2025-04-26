@@ -9,6 +9,7 @@ EXPECTED_COLUMNS = {
     "source_path": "VARCHAR",
     "filename": "VARCHAR",
     "blob": "BLOB",
+    "extracted_text": "VARCHAR",  # Or TEXT
     "size_bytes": "BIGINT",  # Or maybe INTEGER depending on exact DuckDB version/schema
     "last_modified_ts": "TIMESTAMP",
 }
@@ -40,9 +41,7 @@ def test_connect_db_creates_table_and_file(tmp_path):
             "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'files' ORDER BY ordinal_position;"
         ).fetchall()
 
-        assert len(columns_info) == len(EXPECTED_COLUMNS), (
-            f"Expected {len(EXPECTED_COLUMNS)} columns, found {len(columns_info)}"
-        )
+        assert len(columns_info) == 6, f"Expected 6 columns, found {len(columns_info)}"
 
         # Check column names and rough types
         actual_columns = {name: type_str for name, type_str in columns_info}
