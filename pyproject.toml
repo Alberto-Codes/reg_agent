@@ -55,5 +55,5 @@ exclude_lines = [
     "raise AssertionError",
     "raise NotImplementedError",
     "if 0:",
-    "if __name__ == .__main__.:" # Also exclude dunder main specifically
+    "if __name__ == '__main__':" # Also exclude dunder main specifically
 ]
