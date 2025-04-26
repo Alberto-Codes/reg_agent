@@ -4,3 +4,5 @@ globs:
 alwaysApply: false
 ---
 use [pytest.mdc](mdc:.cursor/rules/pytest.mdc) to configure and run tests
+
+when using logging for tests use @structlog-testing

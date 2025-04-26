@@ -4,4 +4,5 @@ globs:
 alwaysApply: false
 ---
 use @structlog-reference to implement logging and debug
+when testing logging use @structlog-testing
 
