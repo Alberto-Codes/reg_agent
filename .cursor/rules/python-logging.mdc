@@ -1,0 +1,7 @@
+---
+description: how to implement logging in python
+globs: 
+alwaysApply: false
+---
+use @structlog-reference to implement logging and debug
+

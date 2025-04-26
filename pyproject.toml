@@ -7,7 +7,9 @@ authors = [
     { name = "Alberto-Codes", email = "94092485+Alberto-Codes@users.noreply.github.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "structlog>=25.3.0",
+]
 
 [project.scripts]
 reg-agent = "reg_agent:main"
