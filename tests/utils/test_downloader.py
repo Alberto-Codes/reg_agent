@@ -289,6 +289,25 @@ def test_search_frb_success(mocker, downloader_instance):
 
 # Add more tests for search_frb (e.g., empty CSV, errors)
 
+# --- Tests for run method ---
+
+def test_run_calls_search_methods(mocker, downloader_instance):
+    """Test that the run method calls all search methods."""
+    # Arrange
+    mock_cfpb = mocker.patch.object(downloader_instance, 'search_cfpb')
+    mock_occ = mocker.patch.object(downloader_instance, 'search_occ')
+    mock_frb = mocker.patch.object(downloader_instance, 'search_frb')
+
+    # Act
+    downloader_instance.run()
+
+    # Assert
+    mock_cfpb.assert_called_once()
+    mock_occ.assert_called_once()
+    # Check that search_frb was called with the specific search term used in run()
+    mock_frb.assert_called_once_with("Wells Fargo") 
+
+
 # Remove the old unittest main guard
 # if __name__ == '__main__':
 #     unittest.main() 
