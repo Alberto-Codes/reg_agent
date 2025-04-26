@@ -7,6 +7,7 @@ import requests # Need this for exception testing
 import pandas as pd
 from io import StringIO
 import csv
+from bs4 import BeautifulSoup
 
 # Ensure src directory is in the path to find reg_agent during testing
 # This might be necessary depending on how tests are run. Adjust if needed.
@@ -123,57 +124,41 @@ MOCK_CFPB_ACTION_DETAIL_HTML = """
 """
 
 def test_search_cfpb_success(mocker, downloader_instance):
-    """Test search_cfpb finds a matching action and calls download_file."""
+    """Test search_cfpb finds a matching action (refactored)."""
     # Arrange
-    mock_search_response = MagicMock()
-    mock_search_response.raise_for_status.return_value = None
-    mock_search_response.text = MOCK_CFPB_SEARCH_HTML
+    # Mock _fetch_and_parse to return different soups based on URL
+    mock_search_soup = BeautifulSoup(MOCK_CFPB_SEARCH_HTML, "html.parser")
+    mock_detail_soup = BeautifulSoup(MOCK_CFPB_ACTION_DETAIL_HTML, "html.parser")
 
-    mock_detail_response = MagicMock()
-    mock_detail_response.raise_for_status.return_value = None
-    mock_detail_response.text = MOCK_CFPB_ACTION_DETAIL_HTML
-
-    # Mock requests.get to return different responses based on URL
-    def mock_get(*args, **kwargs):
-        url = args[0]
+    def mock_fetch(*args, **kwargs):
+        url = args[0] # url is the first positional arg
         if "consumerfinance.gov/enforcement/actions/?title=Wells+Fargo" in url:
-            return mock_search_response
+            return mock_search_soup
         elif "consumerfinance.gov/actions/details/wells-fargo-action-1/" in url:
-            return mock_detail_response
+            return mock_detail_soup
         else:
-            raise requests.exceptions.RequestException(f"Unexpected URL: {url}")
+            return None # Simulate fetch failure for unexpected URLs
 
-    mock_requests_get = mocker.patch("requests.get", side_effect=mock_get)
+    mock_fetch_parse = mocker.patch.object(downloader_instance, '_fetch_and_parse', side_effect=mock_fetch)
     
-    # Mock the instance's download_file method
-    mock_download = mocker.patch.object(downloader_instance, 'download_file', return_value=True)
+    # Mock _find_and_download_pdfs 
+    mock_find_download = mocker.patch.object(downloader_instance, '_find_and_download_pdfs')
 
-    # Expected URLs and filenames
+    # Expected detail URL to be passed to helpers
     expected_detail_url = "https://www.consumerfinance.gov/actions/details/wells-fargo-action-1/"
-    expected_pdf_url_1 = "https://www.consumerfinance.gov/documents/consent-order-1.pdf"
-    expected_pdf_url_2 = "https://www.consumerfinance.gov/actions/details/documents/consent-order-2.pdf"
-    expected_pdf_url_3 = "http://external.com/doc.pdf"
-    expected_filename_1 = "CFPB_consent-order-1.pdf"
-    expected_filename_2 = "CFPB_consent-order-2.pdf"
-    expected_filename_3 = "CFPB_doc.pdf"
+    expected_search_url = "https://www.consumerfinance.gov/enforcement/actions/?title=Wells+Fargo&from_date=&to_date="
 
     # Act
     downloader_instance.search_cfpb()
 
     # Assert
-    # Check requests.get calls
-    assert mock_requests_get.call_count == 2
-    mock_requests_get.assert_any_call(
-        "https://www.consumerfinance.gov/enforcement/actions/?title=Wells+Fargo&from_date=&to_date=", 
-        headers=downloader_instance.headers
-    )
-    mock_requests_get.assert_any_call(expected_detail_url, headers=downloader_instance.headers)
+    # Check _fetch_and_parse calls (search page + matching detail page)
+    assert mock_fetch_parse.call_count == 2
+    mock_fetch_parse.assert_any_call(expected_search_url)
+    mock_fetch_parse.assert_any_call(expected_detail_url)
 
-    # Check download_file calls
-    assert mock_download.call_count == 3
-    mock_download.assert_any_call(expected_pdf_url_1, expected_filename_1)
-    mock_download.assert_any_call(expected_pdf_url_2, expected_filename_2)
-    mock_download.assert_any_call(expected_pdf_url_3, expected_filename_3)
+    # Check _find_and_download_pdfs call (only for the successful detail page parse)
+    mock_find_download.assert_called_once_with(mock_detail_soup, expected_detail_url, "CFPB")
 
 
 # Add more tests for search_cfpb (e.g., no results found, request errors)
@@ -201,47 +186,38 @@ MOCK_OCC_ACTION_DETAIL_HTML = """
 """
 
 def test_search_occ_success(mocker, downloader_instance):
-    """Test search_occ finds a matching action and calls download_file."""
+    """Test search_occ finds a matching action (refactored)."""
     # Arrange
-    mock_search_response = MagicMock()
-    mock_search_response.raise_for_status.return_value = None
-    mock_search_response.text = MOCK_OCC_SEARCH_HTML
+    mock_search_soup = BeautifulSoup(MOCK_OCC_SEARCH_HTML, "html.parser")
+    mock_detail_soup = BeautifulSoup(MOCK_OCC_ACTION_DETAIL_HTML, "html.parser")
 
-    mock_detail_response = MagicMock()
-    mock_detail_response.raise_for_status.return_value = None
-    mock_detail_response.text = MOCK_OCC_ACTION_DETAIL_HTML
-
-    # Mock requests.get
-    def mock_get(*args, **kwargs):
+    def mock_fetch(*args, **kwargs):
         url = args[0]
         if "occ.gov/search/index.html?q=wells+fargo+enforcement+action" in url:
-            return mock_search_response
+            return mock_search_soup
         elif "occ.gov/topics/enforcement-actions/ea2023-050.html" in url:
-            return mock_detail_response
+            return mock_detail_soup
         else:
-            raise requests.exceptions.RequestException(f"Unexpected OCC URL: {url}")
+            return None
 
-    mock_requests_get = mocker.patch("requests.get", side_effect=mock_get)
-    
-    # Mock download_file
-    mock_download = mocker.patch.object(downloader_instance, 'download_file', return_value=True)
+    mock_fetch_parse = mocker.patch.object(downloader_instance, '_fetch_and_parse', side_effect=mock_fetch)
+    mock_find_download = mocker.patch.object(downloader_instance, '_find_and_download_pdfs')
 
-    # Expected URLs and filenames
+    # Expected URLs
+    expected_search_url = downloader_instance.regulatory_sites["OCC"]
     expected_detail_url = "https://occ.gov/topics/enforcement-actions/ea2023-050.html"
-    expected_pdf_url = "https://occ.gov/static/publications/ea2023-050.pdf"
-    expected_filename = "OCC_ea2023-050.pdf"
 
     # Act
     downloader_instance.search_occ()
 
     # Assert
-    # Check requests.get calls
-    assert mock_requests_get.call_count == 2
-    mock_requests_get.assert_any_call(downloader_instance.regulatory_sites["OCC"], headers=downloader_instance.headers)
-    mock_requests_get.assert_any_call(expected_detail_url, headers=downloader_instance.headers)
+    # Check _fetch_and_parse calls
+    assert mock_fetch_parse.call_count == 2
+    mock_fetch_parse.assert_any_call(expected_search_url)
+    mock_fetch_parse.assert_any_call(expected_detail_url)
 
-    # Check download_file call
-    mock_download.assert_called_once_with(expected_pdf_url, expected_filename)
+    # Check _find_and_download_pdfs call
+    mock_find_download.assert_called_once_with(mock_detail_soup, expected_detail_url, "OCC")
 
 
 # Add more tests for search_occ (e.g., no results, request errors)
@@ -306,6 +282,73 @@ def test_run_calls_search_methods(mocker, downloader_instance):
     mock_occ.assert_called_once()
     # Check that search_frb was called with the specific search term used in run()
     mock_frb.assert_called_once_with("Wells Fargo") 
+
+
+# --- Tests for Helper Methods ---
+
+def test_fetch_and_parse_success(mocker, downloader_instance):
+    """Test _fetch_and_parse successfully returns soup."""
+    # Arrange
+    mock_html = "<html><body>Test</body></html>"
+    mock_response = MagicMock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.text = mock_html
+    mock_get = mocker.patch("requests.get", return_value=mock_response)
+    test_url = "http://example.com"
+    
+    # Act
+    soup = downloader_instance._fetch_and_parse(test_url)
+
+    # Assert
+    assert soup is not None
+    assert soup.find("body").text == "Test"
+    mock_get.assert_called_once_with(test_url, headers=downloader_instance.headers)
+
+def test_fetch_and_parse_failure(mocker, downloader_instance):
+    """Test _fetch_and_parse returns None on request exception."""
+    # Arrange
+    mock_get = mocker.patch("requests.get", side_effect=requests.exceptions.RequestException("Failed"))
+    test_url = "http://bad-example.com"
+
+    # Act
+    soup = downloader_instance._fetch_and_parse(test_url)
+
+    # Assert
+    assert soup is None
+    mock_get.assert_called_once_with(test_url, headers=downloader_instance.headers)
+
+def test_find_and_download_pdfs_success(mocker, downloader_instance):
+    """Test _find_and_download_pdfs finds links and calls download_file."""
+    # Arrange
+    mock_soup = BeautifulSoup(MOCK_CFPB_ACTION_DETAIL_HTML, "html.parser") # Reuse some html
+    base_url = "https://www.consumerfinance.gov/actions/details/wells-fargo-action-1/"
+    agency_prefix = "TEST"
+    
+    mock_download = mocker.patch.object(downloader_instance, 'download_file', return_value=True)
+    # Expected calls derived from MOCK_CFPB_ACTION_DETAIL_HTML
+    expected_calls = [
+        mocker.call("https://www.consumerfinance.gov/documents/consent-order-1.pdf", "TEST_consent-order-1.pdf"),
+        mocker.call("https://www.consumerfinance.gov/actions/details/documents/consent-order-2.pdf", "TEST_consent-order-2.pdf"),
+        mocker.call("http://external.com/doc.pdf", "TEST_doc.pdf")
+    ]
+
+    # Act
+    downloader_instance._find_and_download_pdfs(mock_soup, base_url, agency_prefix)
+
+    # Assert
+    assert mock_download.call_count == 3
+    mock_download.assert_has_calls(expected_calls, any_order=True)
+
+def test_find_and_download_pdfs_no_soup(mocker, downloader_instance):
+    """Test _find_and_download_pdfs handles None soup input."""
+     # Arrange
+    mock_download = mocker.patch.object(downloader_instance, 'download_file')
+
+    # Act
+    downloader_instance._find_and_download_pdfs(None, "http://base.url", "TEST")
+
+    # Assert
+    mock_download.assert_not_called()
 
 
 # Remove the old unittest main guard

@@ -44,6 +44,39 @@ class ConsentOrderDownloader:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
 
+    # --- NEW HELPER METHODS ---
+    def _fetch_and_parse(self, url):
+        """Fetches a URL, checks status, and returns a BeautifulSoup object."""
+        try:
+            response = requests.get(url, headers=self.headers)
+            response.raise_for_status() # Check for HTTP errors
+            return BeautifulSoup(response.text, "html.parser")
+        except requests.exceptions.RequestException as e:
+            self.log.error("fetch_failed", url=url, error=str(e), error_type=type(e).__name__)
+            return None # Return None on failure
+
+    def _find_and_download_pdfs(self, soup, base_url, agency_prefix):
+        """Finds PDF links in a BeautifulSoup object and downloads them."""
+        if not soup:
+            return # Don't proceed if parsing failed
+            
+        pdf_links = soup.find_all("a", href=lambda x: x and x.lower().endswith(".pdf"))
+        self.log.debug("found_pdf_links", count=len(pdf_links), base_url=base_url)
+
+        for link in pdf_links:
+            pdf_url = urljoin(base_url, link["href"])
+            # Basic filename cleaning (can be expanded)
+            base_filename = os.path.basename(pdf_url)
+            safe_filename = re.sub(r"[^\w\-_\.]", "_", base_filename)
+            filename = f"{agency_prefix}_{safe_filename}"
+            
+            if self.download_file(pdf_url, filename):
+                self.log.info("successfully_downloaded", filename=filename, source_url=pdf_url)
+            else:
+                self.log.error("failed_to_download_pdf", filename=filename, pdf_url=pdf_url)
+    
+    # --- END NEW HELPER METHODS ---
+
     def download_file(self, url, filename):
         """Download a file from a URL and save it to the output directory."""
         log = self.log.bind(url=url, filename=filename)
@@ -66,178 +99,102 @@ class ConsentOrderDownloader:
         """Search CFPB enforcement actions for Wells Fargo consent orders."""
         log = self.log.bind(agency="CFPB")
         log.info("searching_agency")
-        try:
-            # Use the specific Wells Fargo search URL
-            search_url = "https://www.consumerfinance.gov/enforcement/actions/?title=Wells+Fargo&from_date=&to_date="
-            response = requests.get(search_url, headers=self.headers)
-            response.raise_for_status()
-            log.debug("got_response", status_code=response.status_code)
+        # Use the specific Wells Fargo search URL
+        search_url = "https://www.consumerfinance.gov/enforcement/actions/?title=Wells+Fargo&from_date=&to_date="
+        
+        soup = self._fetch_and_parse(search_url)
+        if not soup:
+            return # Exit if initial fetch failed
 
-            soup = BeautifulSoup(response.text, "html.parser")
+        # Try different selectors
+        actions = []
+        list_items = soup.find_all("li", class_="m-list_item")
+        if list_items: actions.extend(list_items)
+        articles = soup.find_all("article")
+        if articles: actions.extend(articles)
+        divs = soup.find_all("div", class_=["o-post-preview", "content-l_col"])
+        if divs: actions.extend(divs)
 
-            # Debug: Print the HTML structure
-            log.debug("page_content", content=soup.prettify()[:1000])
+        log.info("found_potential_actions", count=len(actions))
 
-            # Try different selectors
-            actions = []
+        for action in actions:
+            title = None
+            title_candidates = [
+                action.find("h3"),
+                action.find("h3", class_="o-post-preview__title"),
+                action.find("a", class_="m-list_link"),
+            ]
+            for candidate in title_candidates:
+                if candidate and candidate.text.strip():
+                    title = candidate
+                    break
+            if not title: continue
 
-            # Try list items
-            list_items = soup.find_all("li", class_="m-list_item")
-            if list_items:
-                actions.extend(list_items)
-                log.debug("found_list_items", count=len(list_items))
+            title_text = title.text.strip()
+            log.debug("checking_action", title=title_text)
 
-            # Try article elements
-            articles = soup.find_all("article")
-            if articles:
-                actions.extend(articles)
-                log.debug("found_articles", count=len(articles))
-
-            # Try div elements with specific classes
-            divs = soup.find_all("div", class_=["o-post-preview", "content-l_col"])
-            if divs:
-                actions.extend(divs)
-                log.debug("found_divs", count=len(divs))
-
-            log.info("found_actions", count=len(actions))
-
-            for action in actions:
-                # Try different ways to get the title
-                title = None
-                title_candidates = [
-                    action.find("h3"),
-                    action.find("h3", class_="o-post-preview__title"),
-                    action.find("a", class_="m-list_link"),
+            if any(term.lower() in title_text.lower() for term in self.search_terms):
+                log.info("found_matching_action", title=title_text)
+                action_link = None
+                link_candidates = [
+                    title.find("a"),
+                    action.find("a"),
+                    title if title.name == "a" else None,
                 ]
-
-                for candidate in title_candidates:
-                    if candidate and candidate.text.strip():
-                        title = candidate
+                for candidate in link_candidates:
+                    if candidate and candidate.get("href"):
+                        action_link = candidate
                         break
+                if not action_link: continue
 
-                if not title:
-                    continue
-
-                title_text = title.text.strip()
-                log.debug("checking_action", title=title_text)
-
-                if any(term in title_text for term in self.search_terms):
-                    log.info("found_matching_action", title=title_text)
-
-                    # Get the action detail page URL - try different approaches
-                    action_link = None
-                    link_candidates = [
-                        title.find("a"),
-                        action.find("a"),
-                        title if title.name == "a" else None,
-                    ]
-
-                    for candidate in link_candidates:
-                        if candidate and candidate.get("href"):
-                            action_link = candidate
-                            break
-
-                    if not action_link:
-                        continue
-
-                    action_url = urljoin(
-                        self.regulatory_sites["CFPB"], action_link["href"]
-                    )
-                    log.debug("fetching_action_page", url=action_url)
-
-                    # Get the specific action page
-                    action_response = requests.get(action_url, headers=self.headers)
-                    action_soup = BeautifulSoup(action_response.text, "html.parser")
-
-                    # Look for PDF links in the action page
-                    pdf_links = action_soup.find_all(
-                        "a", href=lambda x: x and x.endswith(".pdf")
-                    )
-                    log.debug("found_pdf_links", count=len(pdf_links))
-
-                    for link in pdf_links:
-                        pdf_url = urljoin(action_url, link["href"])
-                        filename = f"CFPB_{os.path.basename(pdf_url)}"
-                        if self.download_file(pdf_url, filename):
-                            log.info("successfully_downloaded", filename=filename)
-                        else:
-                            log.error("failed_to_download", filename=filename)
-
-        except Exception as e:
-            log.error("search_failed", error=str(e), error_type=type(e).__name__)
+                action_url = urljoin(search_url, action_link["href"]) # Use search_url as base
+                log.debug("fetching_action_page", url=action_url)
+                
+                # Fetch detail page and download PDFs using helpers
+                action_soup = self._fetch_and_parse(action_url)
+                self._find_and_download_pdfs(action_soup, action_url, "CFPB")
 
     def search_occ(self):
         """Search OCC enforcement actions for Wells Fargo consent orders."""
         log = self.log.bind(agency="OCC")
         log.info("searching_agency")
-        try:
-            response = requests.get(self.regulatory_sites["OCC"], headers=self.headers)
-            response.raise_for_status()
-            log.debug("got_response", status_code=response.status_code)
+        search_url = self.regulatory_sites["OCC"]
+        
+        soup = self._fetch_and_parse(search_url)
+        if not soup:
+            return # Exit if initial fetch failed
 
-            soup = BeautifulSoup(response.text, "html.parser")
-            # Look for search results
-            results = soup.find_all("div", class_="search-result")
-            log.info("found_results", count=len(results))
+        results = soup.find_all("div", class_="search-result")
+        log.info("found_results", count=len(results))
 
-            for result in results:
-                title = result.find("h3").text.strip() if result.find("h3") else ""
-                log.debug("checking_result", title=title)
+        for result in results:
+            title_tag = result.find("h3")
+            title = title_tag.text.strip() if title_tag else ""
+            log.debug("checking_result", title=title)
 
-                if any(term in title for term in self.search_terms):
-                    log.info("found_matching_action", title=title)
-                    # Find the link to the enforcement action
-                    link = result.find("a")
-                    if link:
-                        action_url = urljoin(self.regulatory_sites["OCC"], link["href"])
-                        try:
-                            # Get the enforcement action page
-                            action_response = requests.get(
-                                action_url, headers=self.headers
-                            )
-                            action_soup = BeautifulSoup(
-                                action_response.text, "html.parser"
-                            )
-                            # Look for PDF links
-                            pdf_links = action_soup.find_all(
-                                "a", href=lambda x: x and x.endswith(".pdf")
-                            )
-                            log.debug("found_pdf_links", count=len(pdf_links))
-
-                            for pdf_link in pdf_links:
-                                pdf_url = urljoin(action_url, pdf_link["href"])
-                                filename = f"OCC_{os.path.basename(pdf_url)}"
-                                self.download_file(pdf_url, filename)
-                        except Exception as e:
-                            log.error(
-                                "action_page_failed", error=str(e), url=action_url
-                            )
-        except Exception as e:
-            log.error("search_failed", error=str(e), error_type=type(e).__name__)
+            if any(term.lower() in title.lower() for term in self.search_terms):
+                log.info("found_matching_action", title=title)
+                link = result.find("a")
+                if link and link.get("href"):
+                    action_url = urljoin(search_url, link["href"]) # Use search_url as base
+                    log.debug("fetching_action_page", url=action_url)
+                    
+                    # Fetch detail page and download PDFs using helpers
+                    action_soup = self._fetch_and_parse(action_url)
+                    self._find_and_download_pdfs(action_soup, action_url, "OCC")
 
     def search_frb(self, search_term):
-        """
-        Search for enforcement actions from the Federal Reserve Board using their CSV data.
-
-        Args:
-            search_term (str): The term to search for in enforcement actions
-        """
+        """Search FRB enforcement actions using their CSV data."""
         log = self.log.bind(agency="FRB")
         log.info("searching_agency", search_term=search_term)
 
         try:
-            # CSV endpoint for enforcement actions
             csv_url = "https://www.federalreserve.gov/supervisionreg/files/enforcementactions.csv"
-
-            # Download and read the CSV data
-            response = requests.get(csv_url, headers=self.headers)
+            response = requests.get(csv_url, headers=self.headers) # Keep direct request here for now
             response.raise_for_status()
-
-            # Parse CSV data
             csv_data = response.text.splitlines()
             reader = csv.DictReader(csv_data)
             actions = list(reader)
-
             log.info("found_actions", count=len(actions))
 
             for action in actions:
@@ -265,28 +222,20 @@ class ConsentOrderDownloader:
 
                     if doc_url and doc_url.lower().endswith(".pdf"):
                         try:
-                            # Generate a clean filename
+                            # Keep FRB specific filename logic for now
                             filename = f"FRB_{docket.replace('/', '_')}_{action_date}_{action_type}.pdf"
-                            filename = re.sub(
-                                r"[^\w\-_\.]", "_", filename
-                            )  # Remove invalid chars
-
+                            filename = re.sub(r"[^\w\-_\.]", "_", filename) 
                             if self.download_file(doc_url, filename):
                                 log.info("successfully_downloaded", filename=filename)
                             else:
-                                log.error("failed_to_download", filename=filename)
+                                log.error("failed_to_download", filename=filename, url=doc_url) # Add URL
                         except Exception as e:
-                            log.error(
-                                "document_download_failed",
-                                error=str(e),
-                                error_type=type(e).__name__,
-                                url=doc_url,
-                            )
-
+                            log.error("document_download_failed", error=str(e), error_type=type(e).__name__, url=doc_url)
         except requests.exceptions.RequestException as e:
-            log.error("search_failed", error=str(e), error_type=type(e).__name__)
+             log.error("csv_fetch_failed", url=csv_url, error=str(e), error_type=type(e).__name__)
         except Exception as e:
-            log.error("search_failed", error=str(e), error_type=type(e).__name__)
+            # Catch potential CSV parsing errors etc.
+            log.error("frb_search_processing_failed", error=str(e), error_type=type(e).__name__)
 
     def run(self):
         """Run the downloader to search and download enforcement actions."""
