@@ -6,24 +6,22 @@ The core functionality involves ingesting files into a DuckDB database and provi
 
 This project is managed using `uv` for dependency management and `ruff` for linting/formatting.
 
-## Current Status (MVP 1)
+## Current Status
 
-*   **Goal:** Establish a local, reproducible DuckDB database to store files and basic metadata.
-*   **Progress:**
-    *   Project structure defined.
-    *   `duckdb` dependency added.
-    *   Core database connection (`src/reg_agent/core/db/connection.py`) implemented.
-        *   Creates `./db/file_archive.db` if it doesn't exist.
-        *   Creates the `files` table with the initial schema.
-    *   Testing framework (`pytest`, `pytest-cov`) configured.
-    *   Unit test for database connection (`tests/core/db/test_connection.py`) passes.
-*   **Next Steps:** Implement the file ingestion pipeline.
+The initial MVP (Minimum Viable Product) focusing on file ingestion into a local DuckDB database is complete.
+
+*   **Functionality:**
+    *   Connects to or creates a DuckDB database file (`.db`).
+    *   Ensures the `files` table exists with the required schema (`source_path`, `filename`, `blob`, `size_bytes`, `last_modified_ts`).
+    *   Provides a CLI command (`reg-agent ingest run`) to scan a directory and ingest files into the database, skipping duplicates based on `source_path`.
+*   **Next Steps:** Implement agent functionalities to query and interact with the ingested data.
 
 ## Project Structure
 
 ```
 reg_agent/
-├── db/                     # Stores the DuckDB database file(s)
+├── data/                   # Sample data for ingestion (ignored by git)
+├── db/                     # Stores the DuckDB database file(s) (ignored by git)
 ├── src/
 │   └── reg_agent/
 │       ├── __init__.py
@@ -31,15 +29,16 @@ reg_agent/
 │       │   └── db/         # DuckDB connection, schema, operations
 │       ├── pipelines/      # Data processing workflows
 │       │   └── ingestion/  # File ingestion logic
-│       ├── agents/         # LLM Agent implementations and tools
-│       ├── commands/       # CLI command implementations
-│       ├── cli.py          # Main CLI entry point (using Typer/Click - TBD)
+│       ├── agents/         # LLM Agent implementations and tools (Future)
+│       ├── commands/       # CLI command implementations (ingest)
+│       ├── cli.py          # Main CLI entry point (using Typer)
 │       └── utils/          # Shared utility functions
 ├── tests/
 │   ├── __init__.py
 │   ├── core/
 │   │   └── db/
 │   │       └── test_connection.py # Tests for DB connection
+│   │       └── test_loader.py     # Tests for file ingestion
 │   ├── conftest.py        # Pytest configuration (incl. structlog setup)
 │   └── utils/             # Tests for utilities
 ├── .gitignore
@@ -56,11 +55,19 @@ reg_agent/
 1.  **Clone the repository:**
     ```bash
     git clone <repository-url>
-    cd reg-agent
+    cd reg_agent
     ```
 
-2.  **Install dependencies using uv:**
-    Make sure you have `uv` installed (`pipx install uv`).
+2.  **Create and activate a virtual environment (optional but recommended):**
+    ```bash
+    uv venv
+    source .venv/bin/activate  # Linux/macOS
+    # or
+    .venv\Scripts\activate    # Windows
+    ```
+
+3.  **Install dependencies using uv:**
+    Make sure you have `uv` installed (`pipx install uv` or `pip install uv`).
     ```bash
     uv sync
     ```
@@ -68,23 +75,30 @@ reg_agent/
 
 ## Usage
 
-(Currently under development. A CLI will be added to trigger ingestion and interact with the agent.)
+The primary interaction is through the `reg-agent` CLI command.
 
-The core database connection can be tested programmatically:
+### File Ingestion
 
-```python
-# Example: Ensure DB connection and table creation works
-from reg_agent.core.db.connection import connect_db
+To ingest files from a source directory into the database:
 
-try:
-    con = connect_db() # Uses ./db/file_archive.db by default
-    print("Connection successful, 'files' table ensured.")
-    # Check table structure
-    print(con.execute("DESCRIBE files;").fetchall())
-    con.close()
-except Exception as e:
-    print(f"An error occurred: {e}")
+```bash
+reg-agent ingest run <SOURCE_DIRECTORY> [--db-path <DATABASE_FILE_PATH>]
 ```
+
+*   `<SOURCE_DIRECTORY>`: The path to the directory containing files to ingest (e.g., `./data`).
+*   `--db-path` (optional): The path to the DuckDB database file. Defaults to `./db/regulations.db`. The file and its parent directory (`./db/`) will be created if they don't exist. The `.db` file is ignored by git.
+
+**Example:**
+
+```bash
+# Ingest files from the ./data directory into the default ./db/regulations.db
+reg-agent ingest run ./data
+
+# Ingest files into a specific database file
+reg-agent ingest run ./path/to/your/files --db-path ./my_archive.db
+```
+
+The ingestion process scans the source directory recursively, reads file metadata and content, and inserts records into the `files` table. It skips files whose `source_path` already exists in the database.
 
 ## Development
 
@@ -97,7 +111,7 @@ To run all tests:
 uv run pytest
 ```
 
-To run tests with coverage reporting (targeting the `src/reg_agent` package):
+To run tests with coverage reporting:
 ```bash
 uv run pytest --cov=src/reg_agent --cov-report term-missing
 ```
@@ -106,16 +120,21 @@ uv run pytest --cov=src/reg_agent --cov-report term-missing
 
 This project uses `ruff` for linting and formatting. Configuration is in `.ruff.toml`.
 
-To check for linting errors:
+To check for issues and apply automatic fixes:
 ```bash
-uv run ruff check .
+uv run ruff check --fix .
 ```
 
-To automatically format code:
+To format code:
 ```bash
 uv run ruff format .
 ```
 
+You can run both checks sequentially:
+```bash
+uv run ruff check --fix . && uv run ruff format .
+```
+
 ### Logging
 
-Structured logging is implemented using `structlog`. See `src/reg_agent/utils/downloader.py` for example usage and `tests/conftest.py` for how it's configured for testing.
+Structured logging is implemented using `structlog`. Logs are configured to output simple key-value pairs during development and testing.
