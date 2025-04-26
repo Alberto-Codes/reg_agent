@@ -8,6 +8,9 @@ import pandas as pd
 from io import StringIO
 import csv
 from bs4 import BeautifulSoup
+# Import the logger used within the module under test
+from reg_agent.utils.downloader import logger as downloader_logger
+import structlog # Add import
 
 # Ensure src directory is in the path to find reg_agent during testing
 # This might be necessary depending on how tests are run. Adjust if needed.
@@ -54,8 +57,9 @@ def test_init_custom_output_dir(mocker):
 @pytest.fixture
 def downloader_instance(mocker):
     """Fixture to create a ConsentOrderDownloader instance with mocked mkdir."""
-    mocker.patch("pathlib.Path.mkdir") 
-    return ConsentOrderDownloader()
+    mocker.patch("pathlib.Path.mkdir")
+    downloader = ConsentOrderDownloader()
+    return downloader # Return only downloader
 
 def test_download_file_success(mocker, downloader_instance):
     """Test successful file download."""
@@ -71,14 +75,15 @@ def test_download_file_success(mocker, downloader_instance):
     
     test_url = "http://example.com/file.pdf"
     test_filename = "test_file.pdf"
-    expected_filepath = downloader_instance.output_dir / test_filename
+    downloader = downloader_instance
+    expected_filepath = downloader.output_dir / test_filename
 
     # Act
-    result = downloader_instance.download_file(test_url, test_filename)
+    result = downloader.download_file(test_url, test_filename)
 
     # Assert
     assert result is True
-    mock_requests_get.assert_called_once_with(test_url, stream=True, headers=downloader_instance.headers)
+    mock_requests_get.assert_called_once_with(test_url, stream=True, headers=downloader.headers)
     mock_response.raise_for_status.assert_called_once()
     mock_open.assert_called_once_with(expected_filepath, "wb")
     mock_file_handle().write.assert_any_call(b"chunk1")
@@ -92,13 +97,14 @@ def test_download_file_request_exception(mocker, downloader_instance):
 
     test_url = "http://example.com/badfile.pdf"
     test_filename = "bad_file.pdf"
+    downloader = downloader_instance
 
     # Act
-    result = downloader_instance.download_file(test_url, test_filename)
+    result = downloader.download_file(test_url, test_filename)
 
     # Assert
     assert result is False
-    mock_requests_get.assert_called_once_with(test_url, stream=True, headers=downloader_instance.headers)
+    mock_requests_get.assert_called_once_with(test_url, stream=True, headers=downloader.headers)
     mock_open.assert_not_called() # Ensure file was not opened on error
 
 # --- Tests for search_cfpb ---
@@ -139,17 +145,16 @@ def test_search_cfpb_success(mocker, downloader_instance):
         else:
             return None # Simulate fetch failure for unexpected URLs
 
-    mock_fetch_parse = mocker.patch.object(downloader_instance, '_fetch_and_parse', side_effect=mock_fetch)
+    downloader = downloader_instance
+    mock_fetch_parse = mocker.patch.object(downloader, '_fetch_and_parse', side_effect=mock_fetch)
+    mock_find_download = mocker.patch.object(downloader, '_find_and_download_pdfs')
     
-    # Mock _find_and_download_pdfs 
-    mock_find_download = mocker.patch.object(downloader_instance, '_find_and_download_pdfs')
-
     # Expected detail URL to be passed to helpers
     expected_detail_url = "https://www.consumerfinance.gov/actions/details/wells-fargo-action-1/"
     expected_search_url = "https://www.consumerfinance.gov/enforcement/actions/?title=Wells+Fargo&from_date=&to_date="
 
     # Act
-    downloader_instance.search_cfpb()
+    downloader.search_cfpb()
 
     # Assert
     # Check _fetch_and_parse calls (search page + matching detail page)
@@ -200,15 +205,16 @@ def test_search_occ_success(mocker, downloader_instance):
         else:
             return None
 
-    mock_fetch_parse = mocker.patch.object(downloader_instance, '_fetch_and_parse', side_effect=mock_fetch)
-    mock_find_download = mocker.patch.object(downloader_instance, '_find_and_download_pdfs')
+    downloader = downloader_instance
+    mock_fetch_parse = mocker.patch.object(downloader, '_fetch_and_parse', side_effect=mock_fetch)
+    mock_find_download = mocker.patch.object(downloader, '_find_and_download_pdfs')
 
     # Expected URLs
-    expected_search_url = downloader_instance.regulatory_sites["OCC"]
+    expected_search_url = downloader.regulatory_sites["OCC"]
     expected_detail_url = "https://occ.gov/topics/enforcement-actions/ea2023-050.html"
 
     # Act
-    downloader_instance.search_occ()
+    downloader.search_occ()
 
     # Assert
     # Check _fetch_and_parse calls
@@ -233,18 +239,13 @@ MOCK_FRB_CSV_DATA = ("Institution Name,Docket Number,Action Type,Action Date,URL
 def test_search_frb_success(mocker, downloader_instance):
     """Test search_frb finds matching actions and calls download_file."""
     # Arrange
+    downloader = downloader_instance
     mock_csv_response = MagicMock()
     mock_csv_response.raise_for_status.return_value = None
-    # Set the text attribute directly
     mock_csv_response.text = MOCK_FRB_CSV_DATA 
-
-    # Mock requests.get for the CSV URL
     expected_csv_url = "https://www.federalreserve.gov/supervisionreg/files/enforcementactions.csv"
     mock_requests_get = mocker.patch("requests.get", return_value=mock_csv_response)
-
-    # Mock download_file
-    mock_download = mocker.patch.object(downloader_instance, 'download_file', return_value=True)
-
+    mock_download = mocker.patch.object(downloader, 'download_file', return_value=True)
     # Expected downloads based on mock data and "Wells Fargo" search term
     expected_pdf_url_1 = "https://www.federalreserve.gov/newsevents/pressreleases/files/enf20230115a1.pdf"
     expected_filename_1 = "FRB_FRB-23-001_2023-01-15_Consent_Order.pdf" # Filename uses docket, date, type
@@ -252,35 +253,54 @@ def test_search_frb_success(mocker, downloader_instance):
     expected_filename_2 = "FRB_FRB-23-003_2023-03-10_Written_Agreement.pdf"
 
     # Act
-    downloader_instance.search_frb("Wells Fargo")
-
+    downloader.search_frb("Wells Fargo")
     # Assert
-    # Check requests.get call
-    mock_requests_get.assert_called_once_with(expected_csv_url, headers=downloader_instance.headers)
-
-    # Check download_file calls
+    mock_requests_get.assert_called_once_with(expected_csv_url, headers=downloader.headers)
     assert mock_download.call_count == 2
     mock_download.assert_any_call(expected_pdf_url_1, expected_filename_1)
     mock_download.assert_any_call(expected_pdf_url_2, expected_filename_2)
 
 # Add more tests for search_frb (e.g., empty CSV, errors)
+def test_search_frb_csv_fetch_error(mocker, downloader_instance, caplog):
+    """Test search_frb handles RequestException when fetching CSV."""
+    # Arrange
+    expected_csv_url = "https://www.federalreserve.gov/supervisionreg/files/enforcementactions.csv"
+    mock_requests_get = mocker.patch("requests.get", side_effect=requests.exceptions.RequestException("CSV Fetch Failed"))
+    mock_download = mocker.patch.object(downloader_instance, 'download_file')
+
+    # Act
+    downloader_instance.search_frb("Wells Fargo")
+
+    # Assert
+    mock_requests_get.assert_called_once_with(expected_csv_url, headers=downloader_instance.headers)
+    mock_download.assert_not_called()
+    # Assert log message using caplog - check specifically for the ERROR record
+    error_logs = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert len(error_logs) == 1, f"Expected 1 ERROR log, found {len(error_logs)}"
+    record = error_logs[0]
+    # Check if event name is in the formatted message
+    assert "csv_fetch_failed" in record.message
+    # Optional: Check context fields if they become available/necessary
+    # assert record.url == expected_csv_url
+    # assert "CSV Fetch Failed" in record.error_str # Assuming error string is logged
+
 
 # --- Tests for run method ---
 
 def test_run_calls_search_methods(mocker, downloader_instance):
     """Test that the run method calls all search methods."""
     # Arrange
-    mock_cfpb = mocker.patch.object(downloader_instance, 'search_cfpb')
-    mock_occ = mocker.patch.object(downloader_instance, 'search_occ')
-    mock_frb = mocker.patch.object(downloader_instance, 'search_frb')
+    downloader = downloader_instance
+    mock_cfpb = mocker.patch.object(downloader, 'search_cfpb') 
+    mock_occ = mocker.patch.object(downloader, 'search_occ')   
+    mock_frb = mocker.patch.object(downloader, 'search_frb')   
 
     # Act
-    downloader_instance.run()
+    downloader.run() 
 
     # Assert
     mock_cfpb.assert_called_once()
     mock_occ.assert_called_once()
-    # Check that search_frb was called with the specific search term used in run()
     mock_frb.assert_called_once_with("Wells Fargo") 
 
 
@@ -289,6 +309,7 @@ def test_run_calls_search_methods(mocker, downloader_instance):
 def test_fetch_and_parse_success(mocker, downloader_instance):
     """Test _fetch_and_parse successfully returns soup."""
     # Arrange
+    downloader = downloader_instance
     mock_html = "<html><body>Test</body></html>"
     mock_response = MagicMock()
     mock_response.raise_for_status.return_value = None
@@ -297,14 +318,14 @@ def test_fetch_and_parse_success(mocker, downloader_instance):
     test_url = "http://example.com"
     
     # Act
-    soup = downloader_instance._fetch_and_parse(test_url)
+    soup = downloader._fetch_and_parse(test_url)
 
     # Assert
     assert soup is not None
     assert soup.find("body").text == "Test"
-    mock_get.assert_called_once_with(test_url, headers=downloader_instance.headers)
+    mock_get.assert_called_once_with(test_url, headers=downloader.headers)
 
-def test_fetch_and_parse_failure(mocker, downloader_instance):
+def test_fetch_and_parse_failure(mocker, downloader_instance, caplog):
     """Test _fetch_and_parse returns None on request exception."""
     # Arrange
     mock_get = mocker.patch("requests.get", side_effect=requests.exceptions.RequestException("Failed"))
@@ -316,15 +337,21 @@ def test_fetch_and_parse_failure(mocker, downloader_instance):
     # Assert
     assert soup is None
     mock_get.assert_called_once_with(test_url, headers=downloader_instance.headers)
+    # Assert log message using caplog - check specifically for the ERROR record
+    error_logs = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert len(error_logs) == 1, f"Expected 1 ERROR log, found {len(error_logs)}"
+    record = error_logs[0]
+    assert "fetch_failed" in record.message
 
 def test_find_and_download_pdfs_success(mocker, downloader_instance):
     """Test _find_and_download_pdfs finds links and calls download_file."""
     # Arrange
+    downloader = downloader_instance
     mock_soup = BeautifulSoup(MOCK_CFPB_ACTION_DETAIL_HTML, "html.parser") # Reuse some html
     base_url = "https://www.consumerfinance.gov/actions/details/wells-fargo-action-1/"
     agency_prefix = "TEST"
     
-    mock_download = mocker.patch.object(downloader_instance, 'download_file', return_value=True)
+    mock_download = mocker.patch.object(downloader, 'download_file', return_value=True)
     # Expected calls derived from MOCK_CFPB_ACTION_DETAIL_HTML
     expected_calls = [
         mocker.call("https://www.consumerfinance.gov/documents/consent-order-1.pdf", "TEST_consent-order-1.pdf"),
@@ -333,7 +360,7 @@ def test_find_and_download_pdfs_success(mocker, downloader_instance):
     ]
 
     # Act
-    downloader_instance._find_and_download_pdfs(mock_soup, base_url, agency_prefix)
+    downloader._find_and_download_pdfs(mock_soup, base_url, agency_prefix)
 
     # Assert
     assert mock_download.call_count == 3
@@ -341,11 +368,12 @@ def test_find_and_download_pdfs_success(mocker, downloader_instance):
 
 def test_find_and_download_pdfs_no_soup(mocker, downloader_instance):
     """Test _find_and_download_pdfs handles None soup input."""
-     # Arrange
-    mock_download = mocker.patch.object(downloader_instance, 'download_file')
+    # Arrange
+    downloader = downloader_instance
+    mock_download = mocker.patch.object(downloader, 'download_file')
 
     # Act
-    downloader_instance._find_and_download_pdfs(None, "http://base.url", "TEST")
+    downloader._find_and_download_pdfs(None, "http://base.url", "TEST")
 
     # Assert
     mock_download.assert_not_called()
