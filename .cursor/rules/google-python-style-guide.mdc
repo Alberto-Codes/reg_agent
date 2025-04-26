@@ -1,0 +1,7 @@
+---
+description: 
+globs: *.py
+alwaysApply: false
+---
+Use the [google-python-style-guide.mdc](mdc:.cursor/rules/google-python-style-guide.mdc) to write and document python code with appropriate doc strings and comments.
+

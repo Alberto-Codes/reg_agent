@@ -1,0 +1,16 @@
+---
+description: 
+globs: *.py
+alwaysApply: false
+---
+[use-uv.mdc](mdc:.cursor/rules/use-uv.mdc)
+prioritize use of the '''uv run''' command
+prioritize use of the '''uv add''' commands when adding/installing dependencies
+try and avoid uv pip commands in favor of uv primitive commands
+use the uv tool command to run and manage --dev deps
+use the uv to manage the package
+use the uv to manage virtual environments
+use the uv to run scripts
+use the uv to add dependencies
+
+use the uv to run python

@@ -1,0 +1,12 @@
+---
+description: how to lint and format python files
+globs: 
+alwaysApply: false
+---
+use [ruff-linting.mdc](mdc:.cursor/rules/ruff-linting.mdc) to understand the ruff capabilities
+use ruff to lint
+use ruff to format
+use ruff to fix
+use ruff to sort imports ```ruff check --select I --fix
+
+ruff format```

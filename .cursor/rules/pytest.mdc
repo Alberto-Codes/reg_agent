@@ -1,0 +1,6 @@
+---
+description: guidlines for python testing
+globs: 
+alwaysApply: false
+---
+use [pytest.mdc](mdc:.cursor/rules/pytest.mdc) to configure and run tests
