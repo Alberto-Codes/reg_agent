@@ -1,16 +1,12 @@
 import csv
 import os
 import re
-from io import StringIO
 from pathlib import Path
-from typing import List
 from urllib.parse import urljoin
 
-import pandas as pd
 import requests
 import structlog
 from bs4 import BeautifulSoup
-from tqdm import tqdm
 
 # Configure structlog
 structlog.configure(
@@ -49,17 +45,19 @@ class ConsentOrderDownloader:
         """Fetches a URL, checks status, and returns a BeautifulSoup object."""
         try:
             response = requests.get(url, headers=self.headers)
-            response.raise_for_status() # Check for HTTP errors
+            response.raise_for_status()  # Check for HTTP errors
             return BeautifulSoup(response.text, "html.parser")
         except requests.exceptions.RequestException as e:
-            self.log.error("fetch_failed", url=url, error=str(e), error_type=type(e).__name__)
-            return None # Return None on failure
+            self.log.error(
+                "fetch_failed", url=url, error=str(e), error_type=type(e).__name__
+            )
+            return None  # Return None on failure
 
     def _find_and_download_pdfs(self, soup, base_url, agency_prefix):
         """Finds PDF links in a BeautifulSoup object and downloads them."""
         if not soup:
-            return # Don't proceed if parsing failed
-            
+            return  # Don't proceed if parsing failed
+
         pdf_links = soup.find_all("a", href=lambda x: x and x.lower().endswith(".pdf"))
         self.log.debug("found_pdf_links", count=len(pdf_links), base_url=base_url)
 
@@ -69,12 +67,16 @@ class ConsentOrderDownloader:
             base_filename = os.path.basename(pdf_url)
             safe_filename = re.sub(r"[^\w\-_\.]", "_", base_filename)
             filename = f"{agency_prefix}_{safe_filename}"
-            
+
             if self.download_file(pdf_url, filename):
-                self.log.info("successfully_downloaded", filename=filename, source_url=pdf_url)
+                self.log.info(
+                    "successfully_downloaded", filename=filename, source_url=pdf_url
+                )
             else:
-                self.log.error("failed_to_download_pdf", filename=filename, pdf_url=pdf_url)
-    
+                self.log.error(
+                    "failed_to_download_pdf", filename=filename, pdf_url=pdf_url
+                )
+
     # --- END NEW HELPER METHODS ---
 
     def download_file(self, url, filename):
@@ -101,19 +103,22 @@ class ConsentOrderDownloader:
         log.info("searching_agency")
         # Use the specific Wells Fargo search URL
         search_url = "https://www.consumerfinance.gov/enforcement/actions/?title=Wells+Fargo&from_date=&to_date="
-        
+
         soup = self._fetch_and_parse(search_url)
         if not soup:
-            return # Exit if initial fetch failed
+            return  # Exit if initial fetch failed
 
         # Try different selectors
         actions = []
         list_items = soup.find_all("li", class_="m-list_item")
-        if list_items: actions.extend(list_items)
+        if list_items:
+            actions.extend(list_items)
         articles = soup.find_all("article")
-        if articles: actions.extend(articles)
+        if articles:
+            actions.extend(articles)
         divs = soup.find_all("div", class_=["o-post-preview", "content-l_col"])
-        if divs: actions.extend(divs)
+        if divs:
+            actions.extend(divs)
 
         log.info("found_potential_actions", count=len(actions))
 
@@ -128,7 +133,8 @@ class ConsentOrderDownloader:
                 if candidate and candidate.text.strip():
                     title = candidate
                     break
-            if not title: continue
+            if not title:
+                continue
 
             title_text = title.text.strip()
             log.debug("checking_action", title=title_text)
@@ -145,11 +151,14 @@ class ConsentOrderDownloader:
                     if candidate and candidate.get("href"):
                         action_link = candidate
                         break
-                if not action_link: continue
+                if not action_link:
+                    continue
 
-                action_url = urljoin(search_url, action_link["href"]) # Use search_url as base
+                action_url = urljoin(
+                    search_url, action_link["href"]
+                )  # Use search_url as base
                 log.debug("fetching_action_page", url=action_url)
-                
+
                 # Fetch detail page and download PDFs using helpers
                 action_soup = self._fetch_and_parse(action_url)
                 self._find_and_download_pdfs(action_soup, action_url, "CFPB")
@@ -159,10 +168,10 @@ class ConsentOrderDownloader:
         log = self.log.bind(agency="OCC")
         log.info("searching_agency")
         search_url = self.regulatory_sites["OCC"]
-        
+
         soup = self._fetch_and_parse(search_url)
         if not soup:
-            return # Exit if initial fetch failed
+            return  # Exit if initial fetch failed
 
         results = soup.find_all("div", class_="search-result")
         log.info("found_results", count=len(results))
@@ -176,9 +185,11 @@ class ConsentOrderDownloader:
                 log.info("found_matching_action", title=title)
                 link = result.find("a")
                 if link and link.get("href"):
-                    action_url = urljoin(search_url, link["href"]) # Use search_url as base
+                    action_url = urljoin(
+                        search_url, link["href"]
+                    )  # Use search_url as base
                     log.debug("fetching_action_page", url=action_url)
-                    
+
                     # Fetch detail page and download PDFs using helpers
                     action_soup = self._fetch_and_parse(action_url)
                     self._find_and_download_pdfs(action_soup, action_url, "OCC")
@@ -190,7 +201,9 @@ class ConsentOrderDownloader:
 
         try:
             csv_url = "https://www.federalreserve.gov/supervisionreg/files/enforcementactions.csv"
-            response = requests.get(csv_url, headers=self.headers) # Keep direct request here for now
+            response = requests.get(
+                csv_url, headers=self.headers
+            )  # Keep direct request here for now
             response.raise_for_status()
             csv_data = response.text.splitlines()
             reader = csv.DictReader(csv_data)
@@ -224,18 +237,34 @@ class ConsentOrderDownloader:
                         try:
                             # Keep FRB specific filename logic for now
                             filename = f"FRB_{docket.replace('/', '_')}_{action_date}_{action_type}.pdf"
-                            filename = re.sub(r"[^\w\-_\.]", "_", filename) 
+                            filename = re.sub(r"[^\w\-_\.]", "_", filename)
                             if self.download_file(doc_url, filename):
                                 log.info("successfully_downloaded", filename=filename)
                             else:
-                                log.error("failed_to_download", filename=filename, url=doc_url) # Add URL
+                                log.error(
+                                    "failed_to_download", filename=filename, url=doc_url
+                                )  # Add URL
                         except Exception as e:
-                            log.error("document_download_failed", error=str(e), error_type=type(e).__name__, url=doc_url)
+                            log.error(
+                                "document_download_failed",
+                                error=str(e),
+                                error_type=type(e).__name__,
+                                url=doc_url,
+                            )
         except requests.exceptions.RequestException as e:
-             log.error("csv_fetch_failed", url=csv_url, error=str(e), error_type=type(e).__name__)
+            log.error(
+                "csv_fetch_failed",
+                url=csv_url,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
         except Exception as e:
             # Catch potential CSV parsing errors etc.
-            log.error("frb_search_processing_failed", error=str(e), error_type=type(e).__name__)
+            log.error(
+                "frb_search_processing_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
 
     def run(self):
         """Run the downloader to search and download enforcement actions."""

@@ -9,19 +9,21 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "beautifulsoup4>=4.13.4",
+    "duckdb>=1.2.2",
     "feedparser>=6.0.11",
     "lxml>=5.4.0",
     "pandas>=2.2.3",
     "requests>=2.32.3",
     "structlog>=25.3.0",
     "tqdm>=4.67.1",
+    "typer[all]>=0.15.2",
     "types-beautifulsoup4>=4.12.0.20250204",
     "types-lxml>=2025.3.30",
     "types-requests>=2.32.0.20250328",
 ]
 
 [project.scripts]
-reg-agent = "reg_agent:main"
+reg-agent = "reg_agent.cli:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -33,4 +35,25 @@ dev = [
     "pytest-cov>=6.1.1",
     "pytest-mock>=3.14.0",
     "ruff>=0.11.7",
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["src/reg_agent"]
+omit = [
+    "src/reg_agent/__main__.py", # Example: if you have a main entry point file
+]
+
+[tool.coverage.report]
+# Fail if coverage drops below 80% (adjust as needed)
+# fail_under = 80
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",  # Standard pragma
+    "def __repr__",      # Don't require tests for simple reprs
+    "if self.debug:",  # Debugging blocks
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == '__main__':" # Also exclude dunder main specifically
 ]
