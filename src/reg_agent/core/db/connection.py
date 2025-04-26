@@ -1,6 +1,10 @@
-import duckdb
-import os
 from pathlib import Path
+
+import duckdb
+import structlog
+
+# Initialize logger
+log = structlog.get_logger()
 
 # Define the root directory of the project
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
@@ -8,6 +12,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
 DB_DIR = PROJECT_ROOT / "db"
 # Define the default database file name
 DEFAULT_DB_FILE = DB_DIR / "file_archive.db"
+
 
 def connect_db(db_file: Path = DEFAULT_DB_FILE) -> duckdb.DuckDBPyConnection:
     """
@@ -36,18 +41,20 @@ def connect_db(db_file: Path = DEFAULT_DB_FILE) -> duckdb.DuckDBPyConnection:
     """)
     return con
 
+
 # Example of how to use it (optional, can be removed later)
-if __name__ == '__main__':
-    print(f"Project Root: {PROJECT_ROOT}")
-    print(f"Database Directory: {DB_DIR}")
-    print(f"Database File: {DEFAULT_DB_FILE}")
+if __name__ == "__main__":
+    # Use log.debug for detailed info, log.info for general status
+    log.debug("Project paths", project_root=str(PROJECT_ROOT), db_dir=str(DB_DIR), db_file=str(DEFAULT_DB_FILE))
     try:
         connection = connect_db()
-        print("Database connection successful and 'files' table ensured.")
+        log.info("Database connection successful and 'files' table ensured.", db_file=str(DEFAULT_DB_FILE))
         # Example query
         result = connection.execute("SELECT COUNT(*) FROM files").fetchone()
         count = result[0] if result else 0
-        print(f"Number of files currently in DB: {count}")
+        log.info("Current file count in DB", count=count)
         connection.close()
-    except Exception as e:
-        print(f"An error occurred: {e}") 
+        log.debug("Database connection closed.")
+    except Exception:
+        # Use log.exception to include stack trace
+        log.exception("An error occurred during DB connection example.")

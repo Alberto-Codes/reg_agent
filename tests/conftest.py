@@ -1,6 +1,8 @@
+import logging
+
 import pytest
 import structlog
-import logging
+
 
 @pytest.fixture(autouse=True)
 def configure_structlog_for_pytest():
@@ -40,7 +42,7 @@ def configure_structlog_for_pytest():
             structlog.stdlib.add_log_level,
             structlog.stdlib.add_logger_name,
         ],
-        processor=structlog.dev.ConsoleRenderer(), # Or use JSONRenderer etc.
+        processor=structlog.dev.ConsoleRenderer(),  # Or use JSONRenderer etc.
     )
 
     handler = logging.StreamHandler()
@@ -52,13 +54,13 @@ def configure_structlog_for_pytest():
     # Remove existing handlers added by structlog in downloader.py if it was imported
     for h in root_logger.handlers[:]:
         root_logger.removeHandler(h)
-        
+
     root_logger.addHandler(handler)
-    root_logger.setLevel(logging.DEBUG) # Or set level as needed
+    root_logger.setLevel(logging.DEBUG)  # Or set level as needed
 
     # Yield control to the test
     yield
 
     # Optional: Clean up handlers after the test if necessary
     # structlog.reset_defaults() # Reset again if needed
-    # root_logger.removeHandler(handler) # Remove the handler we added 
+    # root_logger.removeHandler(handler) # Remove the handler we added
