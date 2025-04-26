@@ -1,30 +1,54 @@
 # reg-agent
 
-A Python agent designed to download and process regulatory enforcement action data from various sources (e.g., FRB, OCC).
+A Python agent framework designed to manage and interact with a knowledge base of documents, initially focused on regulatory enforcement actions.
+
+The core functionality involves ingesting files into a DuckDB database and providing tools for an LLM agent to query and reason about the stored information.
 
 This project is managed using `uv` for dependency management and `ruff` for linting/formatting.
+
+## Current Status (MVP 1)
+
+*   **Goal:** Establish a local, reproducible DuckDB database to store files and basic metadata.
+*   **Progress:**
+    *   Project structure defined.
+    *   `duckdb` dependency added.
+    *   Core database connection (`src/reg_agent/core/db/connection.py`) implemented.
+        *   Creates `./db/file_archive.db` if it doesn't exist.
+        *   Creates the `files` table with the initial schema.
+    *   Testing framework (`pytest`, `pytest-cov`) configured.
+    *   Unit test for database connection (`tests/core/db/test_connection.py`) passes.
+*   **Next Steps:** Implement the file ingestion pipeline.
 
 ## Project Structure
 
 ```
 reg_agent/
+├── db/                     # Stores the DuckDB database file(s)
 ├── src/
 │   └── reg_agent/
 │       ├── __init__.py
-│       └── utils/
-│           ├── __init__.py
-│           └── downloader.py  # Handles downloading data
+│       ├── core/           # Foundational components
+│       │   └── db/         # DuckDB connection, schema, operations
+│       ├── pipelines/      # Data processing workflows
+│       │   └── ingestion/  # File ingestion logic
+│       ├── agents/         # LLM Agent implementations and tools
+│       ├── commands/       # CLI command implementations
+│       ├── cli.py          # Main CLI entry point (using Typer/Click - TBD)
+│       └── utils/          # Shared utility functions
 ├── tests/
 │   ├── __init__.py
+│   ├── core/
+│   │   └── db/
+│   │       └── test_connection.py # Tests for DB connection
 │   ├── conftest.py        # Pytest configuration (incl. structlog setup)
-│   └── utils/
-│       ├── __init__.py
-│       └── test_downloader.py # Tests for the downloader
+│   └── utils/             # Tests for utilities
 ├── .gitignore
+├── .python-version      # Specifies Python version
 ├── .ruff.toml           # Ruff configuration
 ├── LICENSE
 ├── pyproject.toml       # Project metadata and dependencies
-└── README.md
+├── README.md            # This file
+└── uv.lock              # uv lock file
 ```
 
 ## Setup
@@ -36,52 +60,46 @@ reg_agent/
     ```
 
 2.  **Install dependencies using uv:**
+    Make sure you have `uv` installed (`pipx install uv`).
     ```bash
     uv sync
     ```
-    This command installs both main and development dependencies listed in `pyproject.toml`.
+    This command installs both main and development dependencies listed in `pyproject.toml` based on `uv.lock`.
 
 ## Usage
 
-(Currently, the primary functionality is within the `Downloader` class in `src/reg_agent/utils/downloader.py`. Add instructions here as a CLI or main entry point is developed.)
+(Currently under development. A CLI will be added to trigger ingestion and interact with the agent.)
 
-Example (programmatic):
+The core database connection can be tested programmatically:
+
 ```python
-from reg_agent.utils.downloader import Downloader
+# Example: Ensure DB connection and table creation works
+from reg_agent.core.db.connection import connect_db
 
-# Initialize the downloader
-downloader = Downloader()
-
-# Example: Search FRB enforcement actions
-# Note: Actual implementation might vary
 try:
-    frb_results = downloader.search_frb("search term")
-    print(f"Found {len(frb_results)} FRB results.")
+    con = connect_db() # Uses ./db/file_archive.db by default
+    print("Connection successful, 'files' table ensured.")
+    # Check table structure
+    print(con.execute("DESCRIBE files;").fetchall())
+    con.close()
 except Exception as e:
     print(f"An error occurred: {e}")
-
-# Example: Search OCC enforcement actions
-# try:
-#     occ_results = downloader.search_occ("search term")
-#     print(f"Found {len(occ_results)} OCC results.")
-# except Exception as e:
-#     print(f"An error occurred: {e}")
 ```
 
 ## Development
 
 ### Running Tests
 
-Tests are written using `pytest`. The test suite includes configuration in `tests/conftest.py` to ensure `structlog` logs are correctly captured during testing.
+Tests are written using `pytest`.
 
 To run all tests:
 ```bash
 uv run pytest
 ```
 
-To run specific tests:
+To run tests with coverage reporting (targeting the `src/reg_agent` package):
 ```bash
-uv run pytest tests/utils/test_downloader.py
+uv run pytest --cov=src/reg_agent --cov-report term-missing
 ```
 
 ### Linting and Formatting
