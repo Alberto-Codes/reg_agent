@@ -36,19 +36,27 @@ def connect_db(db_file: Path = DEFAULT_DB_FILE) -> duckdb.DuckDBPyConnection:
             filename          VARCHAR,
             blob              BLOB,
             size_bytes        BIGINT,
-            last_modified_ts  TIMESTAMP
+            last_modified_ts  TIMESTAMPTZ
         );
     """)
     return con
 
 
 # Example of how to use it (optional, can be removed later)
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     # Use log.debug for detailed info, log.info for general status
-    log.debug("Project paths", project_root=str(PROJECT_ROOT), db_dir=str(DB_DIR), db_file=str(DEFAULT_DB_FILE))
+    log.debug(
+        "Project paths",
+        project_root=str(PROJECT_ROOT),
+        db_dir=str(DB_DIR),
+        db_file=str(DEFAULT_DB_FILE),
+    )
     try:
         connection = connect_db()
-        log.info("Database connection successful and 'files' table ensured.", db_file=str(DEFAULT_DB_FILE))
+        log.info(
+            "Database connection successful and 'files' table ensured.",
+            db_file=str(DEFAULT_DB_FILE),
+        )
         # Example query
         result = connection.execute("SELECT COUNT(*) FROM files").fetchone()
         count = result[0] if result else 0
