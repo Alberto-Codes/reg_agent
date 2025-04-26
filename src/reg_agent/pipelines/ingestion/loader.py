@@ -39,8 +39,13 @@ def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
         # Prepare insert statement
         # Using prepared statements is generally safer and can be faster
         # Using INSERT OR IGNORE to skip duplicates based on PRIMARY KEY (source_path)
+        # insert_sql = """
+        #     INSERT OR IGNORE INTO files (source_path, filename, blob, size_bytes, last_modified_ts)
+        #     VALUES (?, ?, ?, ?, ?);
+        #     """
+        check_sql = "SELECT 1 FROM files WHERE source_path = ? LIMIT 1;"
         insert_sql = """
-            INSERT OR IGNORE INTO files (source_path, filename, blob, size_bytes, last_modified_ts)
+            INSERT INTO files (source_path, filename, blob, size_bytes, last_modified_ts)
             VALUES (?, ?, ?, ?, ?);
             """
 
@@ -63,25 +68,45 @@ def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
                     with open(file_path, "rb") as f:
                         blob_content = f.read()
 
-                    # 3. Insert Record
-                    # DuckDB Python client automatically handles parameter binding
-                    cur = con.execute(
-                        insert_sql,
-                        [
-                            source_path_str,
-                            filename,
-                            blob_content,
-                            size_bytes,
-                            last_modified_ts,
-                        ],
-                    )
+                    # 3. Check if record exists before inserting
+                    existing_record = con.execute(check_sql, [source_path_str]).fetchone()
 
-                    if cur.rowcount > 0:
-                        inserted_count += 1
-                        log.debug("Inserted file", path=source_path_str)
-                    else:
+                    if existing_record:
                         skipped_count += 1
                         log.debug("Skipped existing file", path=source_path_str)
+                    else:
+                        # Insert Record if it doesn't exist
+                        con.execute(
+                            insert_sql,
+                            [
+                                source_path_str,
+                                filename,
+                                blob_content,
+                                size_bytes,
+                                last_modified_ts,
+                            ],
+                        )
+                        inserted_count += 1
+                        log.debug("Inserted file", path=source_path_str)
+
+                    # Original INSERT OR IGNORE logic commented out below
+                    # cur = con.execute(
+                    #     insert_sql,
+                    #     [
+                    #         source_path_str,
+                    #         filename,
+                    #         blob_content,
+                    #         size_bytes,
+                    #         last_modified_ts,
+                    #     ],
+                    # )
+                    #
+                    # if cur.rowcount > 0:
+                    #     inserted_count += 1
+                    #     log.debug("Inserted file", path=source_path_str)
+                    # else:
+                    #     skipped_count += 1
+                    #     log.debug("Skipped existing file", path=source_path_str)
 
                 except OSError as e:
                     error_count += 1
