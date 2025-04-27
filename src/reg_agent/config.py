@@ -2,6 +2,8 @@
 import logging
 import os
 import sys
+import datetime  # Add import
+from pathlib import Path  # Add import
 
 import structlog
 from dotenv import load_dotenv
@@ -23,6 +25,14 @@ shared_processors: list[Processor] = [  # Add type hint
     structlog.contextvars.merge_contextvars,
 ]
 
+# --- Directory for Logs ---
+LOG_DIR = Path("logs")
+LOG_DIR.mkdir(exist_ok=True)  # Create log directory if it doesn't exist
+
+# --- Timestamped Log Filename ---
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+log_file_path = LOG_DIR / f"ingest_{timestamp}.log"
+
 structlog.configure(
     processors=shared_processors
     + [
@@ -34,23 +44,33 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 
-# Configure the standard library logging handler
-handler = logging.StreamHandler(sys.stdout)  # Log to stdout
+# --- Configure Handlers (Console and File) ---
 
-# Use structlog's ProcessorFormatter to format records for the handler
-formatter = structlog.stdlib.ProcessorFormatter(
-    # The foreign_pre_chain is used for messages not originating from structlog
+# 1. Console Handler (existing)
+console_handler = logging.StreamHandler(sys.stdout)  # Log to stdout
+console_formatter = structlog.stdlib.ProcessorFormatter(
     foreign_pre_chain=shared_processors,
-    # Define the final formatting step (e.g., ConsoleRenderer for dev)
-    # Keep ConsoleRenderer here for pretty output
-    processor=structlog.dev.ConsoleRenderer(),
+    processor=structlog.processors.JSONRenderer(), # Use JSON for console temporarily
 )
+console_handler.setFormatter(console_formatter)
 
-handler.setFormatter(formatter)
+# 2. File Handler (new)
+file_handler = logging.FileHandler(log_file_path, encoding="utf-8")
+# Use JSONRenderer for structured file logging
+file_formatter = structlog.stdlib.ProcessorFormatter(
+    foreign_pre_chain=shared_processors,
+    processor=structlog.processors.JSONRenderer(),
+)
+file_handler.setFormatter(file_formatter)
 
-# Get the root logger and add the handler
+# Get the root logger and add BOTH handlers
 root_logger = logging.getLogger()
-root_logger.addHandler(handler)
+# Clear existing handlers if any were added previously (e.g., during reload)
+# Important in some development setups, though might not be strictly necessary here
+if root_logger.hasHandlers():
+    root_logger.handlers.clear()
+root_logger.addHandler(console_handler)
+root_logger.addHandler(file_handler)  # Add the file handler
 root_logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
 
 # Suppress overly verbose loggers if needed (e.g., from libraries)
