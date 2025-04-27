@@ -174,3 +174,75 @@ def test_get_records_by_status_failure(mock_session: MagicMock):
     with pytest.raises(Exception, match="DB Query Error"):
         repo.get_records_by_status(FileStatus.FAILED_OCR)
     mock_session.exec.assert_called_once()
+
+
+# --- Tests for get_records_needing_ocr ---
+
+def test_get_records_needing_ocr_found(mock_session: MagicMock):
+    repo = FileRepository(mock_session)
+    records = [
+        FileRecord(id=uuid.uuid4(), source_path="/no_text1.txt", extracted_text=None),
+        FileRecord(id=uuid.uuid4(), source_path="/no_text2.pdf", extracted_text=None),
+    ]
+    mock_result = MagicMock()
+    mock_result.all.return_value = records
+    mock_session.exec.return_value = mock_result
+
+    found_records = repo.get_records_needing_ocr()
+
+    assert found_records == records
+    mock_session.exec.assert_called_once()
+    # Could add more specific checks on the select statement if needed
+
+def test_get_records_needing_ocr_not_found(mock_session: MagicMock):
+    repo = FileRepository(mock_session)
+    mock_result = MagicMock()
+    mock_result.all.return_value = []
+    mock_session.exec.return_value = mock_result
+
+    found_records = repo.get_records_needing_ocr()
+
+    assert found_records == []
+    mock_session.exec.assert_called_once()
+
+def test_get_records_needing_ocr_failure(mock_session: MagicMock):
+    repo = FileRepository(mock_session)
+    mock_session.exec.side_effect = Exception("DB Query Error for OCR")
+    with pytest.raises(Exception, match="DB Query Error for OCR"):
+        repo.get_records_needing_ocr()
+    mock_session.exec.assert_called_once()
+
+# --- Tests for get_records_needing_metadata ---
+
+def test_get_records_needing_metadata_found(mock_session: MagicMock):
+    repo = FileRepository(mock_session)
+    records = [
+        FileRecord(id=uuid.uuid4(), source_path="/needs_meta1.txt", extracted_text="text", meta_data=None),
+        FileRecord(id=uuid.uuid4(), source_path="/needs_meta2.pdf", extracted_text="more text", meta_data=None),
+    ]
+    mock_result = MagicMock()
+    mock_result.all.return_value = records
+    mock_session.exec.return_value = mock_result
+
+    found_records = repo.get_records_needing_metadata()
+
+    assert found_records == records
+    mock_session.exec.assert_called_once()
+
+def test_get_records_needing_metadata_not_found(mock_session: MagicMock):
+    repo = FileRepository(mock_session)
+    mock_result = MagicMock()
+    mock_result.all.return_value = []
+    mock_session.exec.return_value = mock_result
+
+    found_records = repo.get_records_needing_metadata()
+
+    assert found_records == []
+    mock_session.exec.assert_called_once()
+
+def test_get_records_needing_metadata_failure(mock_session: MagicMock):
+    repo = FileRepository(mock_session)
+    mock_session.exec.side_effect = Exception("DB Query Error for Metadata")
+    with pytest.raises(Exception, match="DB Query Error for Metadata"):
+        repo.get_records_needing_metadata()
+    mock_session.exec.assert_called_once()
