@@ -1,19 +1,17 @@
 # src/reg_agent/services/metadata_service.py
-import structlog
 import asyncio
-import os
 import logging
+import os
+from typing import Optional, Type
+
 import google.auth
 import google.auth.transport.requests
 import httpx
-from pydantic import BaseModel, Field
-from typing import Type, Optional
+import structlog
 
 # For __main__ testing - load environment variables if available
 from dotenv import load_dotenv
-
-# --- Custom Auth ---
-from reg_agent.auth.token_manager import ImpersonatedTokenManager
+from pydantic import BaseModel, Field
 
 # --- Switch imports for OpenAI compatibility ---
 from pydantic_ai.agent import Agent
@@ -21,6 +19,9 @@ from pydantic_ai.agent import Agent
 # Use OpenAIModel and OpenAIProvider now
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
+
+# --- Custom Auth ---
+from reg_agent.auth.token_manager import ImpersonatedTokenManager
 
 # --- Configuration Loading ---
 load_dotenv()
@@ -58,11 +59,12 @@ TARGET_SA_NAME_OR_EMAIL = os.getenv("TARGET_SA_NAME_OR_EMAIL")
 # --- Dynamic Bearer Token Authentication for httpx ---
 class DynamicBearerAuth(httpx.Auth):
     """Custom httpx Auth class to fetch a token dynamically before requests."""
+
     def __init__(self, token_manager: ImpersonatedTokenManager):
         self._token_manager = token_manager
 
     def auth_flow(self, request: httpx.Request):
-        token = self._token_manager.get_token() # Get fresh token
+        token = self._token_manager.get_token()  # Get fresh token
         request.headers["Authorization"] = f"Bearer {token}"
         yield request
 
@@ -93,16 +95,19 @@ class MetadataExtractionService:
 
         auth_method = "Direct ADC"
         # Remove provider_kwargs dictionary
-        direct_adc_token: Optional[str] = None # Store direct token here if needed
+        direct_adc_token: Optional[str] = None  # Store direct token here if needed
 
-        if TARGET_SA_NAME_OR_EMAIL: # Updated check
+        if TARGET_SA_NAME_OR_EMAIL:  # Updated check
             log.info("Impersonation requested", target_sa_input=TARGET_SA_NAME_OR_EMAIL)
             auth_method = f"Impersonated ADC (Target Input: {TARGET_SA_NAME_OR_EMAIL})"
             try:
                 self.token_manager = ImpersonatedTokenManager(
                     target_service_account_name_or_email=TARGET_SA_NAME_OR_EMAIL
                 )
-                log.info("Token Manager targeting resolved SA", target_sa_email=self.token_manager.target_service_account)
+                log.info(
+                    "Token Manager targeting resolved SA",
+                    target_sa_email=self.token_manager.target_service_account,
+                )
                 auth_method = f"Impersonated ADC (Target: {self.token_manager.target_service_account})"
                 # Create httpx client directly
                 self.http_client = httpx.AsyncClient(
@@ -111,8 +116,12 @@ class MetadataExtractionService:
                 # No api_key needed when using custom client with auth
                 log.info("Using httpx client with dynamic token for impersonation.")
             except Exception as tm_err:
-                 log.error("Failed to initialize ImpersonatedTokenManager", exc_info=True)
-                 raise RuntimeError("MetadataExtractionService initialization failed during token manager setup") from tm_err
+                log.error(
+                    "Failed to initialize ImpersonatedTokenManager", exc_info=True
+                )
+                raise RuntimeError(
+                    "MetadataExtractionService initialization failed during token manager setup"
+                ) from tm_err
         else:
             log.info("Using direct ADC authentication.")
             try:
@@ -133,12 +142,16 @@ class MetadataExtractionService:
                 log.error(
                     "Failed to find Application Default Credentials (ADC). "
                     "Ensure you are authenticated (e.g., `gcloud auth application-default login`).",
-                    exc_info=True
+                    exc_info=True,
                 )
-                raise RuntimeError("MetadataExtractionService initialization failed due to missing ADC.") from cred_err
+                raise RuntimeError(
+                    "MetadataExtractionService initialization failed due to missing ADC."
+                ) from cred_err
             except Exception as adc_err:
                 log.error("Failed during direct ADC token retrieval", exc_info=True)
-                raise RuntimeError("MetadataExtractionService initialization failed during ADC setup") from adc_err
+                raise RuntimeError(
+                    "MetadataExtractionService initialization failed during ADC setup"
+                ) from adc_err
 
         log.info(
             "Initializing MetadataExtractionService",
@@ -150,20 +163,24 @@ class MetadataExtractionService:
 
         try:
             # Instantiate OpenAIProvider explicitly based on auth method
-            if self.http_client: # Impersonation mode
+            if self.http_client:  # Impersonation mode
                 provider = OpenAIProvider(
                     base_url=BASE_URL,
-                    http_client=self.http_client # Pass client explicitly
+                    http_client=self.http_client,  # Pass client explicitly
                 )
-            elif direct_adc_token: # Direct ADC mode
+            elif direct_adc_token:  # Direct ADC mode
                 provider = OpenAIProvider(
                     base_url=BASE_URL,
-                    api_key=direct_adc_token # Pass api_key explicitly
+                    api_key=direct_adc_token,  # Pass api_key explicitly
                 )
             else:
                 # This case should ideally not happen if logic above is correct
-                log.error("Invalid state: Neither http_client nor direct_adc_token available for OpenAIProvider.")
-                raise RuntimeError("Failed to determine authentication method for OpenAIProvider.")
+                log.error(
+                    "Invalid state: Neither http_client nor direct_adc_token available for OpenAIProvider."
+                )
+                raise RuntimeError(
+                    "Failed to determine authentication method for OpenAIProvider."
+                )
 
             # Use OpenAIModel with the specific Gemini model name and the provider
             llm = OpenAIModel(
@@ -182,9 +199,14 @@ class MetadataExtractionService:
                 try:
                     # Attempt synchronous close if possible, or handle async appropriately
                     # For now, log and rely on test runner's finally block
-                    log.warning("Need to ensure http_client is closed cleanly on init error.")
+                    log.warning(
+                        "Need to ensure http_client is closed cleanly on init error."
+                    )
                 except Exception as close_err:
-                    log.error("Error trying to close client during init failure", nested_error=str(close_err))
+                    log.error(
+                        "Error trying to close client during init failure",
+                        nested_error=str(close_err),
+                    )
             raise RuntimeError("MetadataExtractionService initialization failed") from e
 
     async def extract_metadata(self, text: str) -> Optional[BaseModel]:
@@ -224,7 +246,7 @@ class MetadataExtractionService:
 async def main_test():
     """Basic test function to run the service."""
     log.info("Starting metadata service test...")
-    service = None # Initialize service to None for finally block
+    service = None  # Initialize service to None for finally block
     try:
         # Initialize using global config, default output type
         service = MetadataExtractionService()
@@ -245,7 +267,7 @@ async def main_test():
         log.error("Test run failed.", error=str(e), exc_info=True)
     finally:
         # Ensure client is closed if service was initialized
-        if service and hasattr(service, 'close'):
+        if service and hasattr(service, "close"):
             await service.close()
 
 

@@ -11,7 +11,9 @@ from sqlalchemy.engine import Engine  # Import Engine type hint
 from sqlmodel import Session, SQLModel, create_engine
 
 # Import the models so SQLModel knows about them for table creation
-from reg_agent.core.db import models  # noqa: F401 (Import models implicitly registers them)
+from reg_agent.core.db import (
+    models,  # noqa: F401 (Import models implicitly registers them)
+)
 
 log = structlog.get_logger()
 
@@ -107,9 +109,10 @@ def get_session(engine: Optional[Engine] = None) -> Generator[Session, None, Non
 
 # Example of how to use it
 if __name__ == "__main__":  # pragma: no cover
+    import datetime  # Add datetime import
     import logging
     import time  # Add time import
-    import datetime  # Add datetime import
+
     from sqlmodel import select
 
     # Basic logging setup for direct script execution

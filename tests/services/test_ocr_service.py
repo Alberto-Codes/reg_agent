@@ -13,7 +13,6 @@ from docling.document_converter import DocumentConverter
 # Assuming OcrService is in src/reg_agent/services/ocr_service.py
 from reg_agent.services.ocr_service import OcrService
 
-
 # --- Fixtures ---
 
 

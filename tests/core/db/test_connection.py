@@ -1,11 +1,12 @@
-import pytest
+import datetime
+import uuid  # Import uuid for checks
 from pathlib import Path
+from typing import Generator
+
+import pytest
 from sqlalchemy import inspect as sql_inspect  # Renamed to avoid naming conflict
 from sqlalchemy.engine import Engine
 from sqlmodel import Session
-import datetime
-from typing import Generator
-import uuid  # Import uuid for checks
 
 # Module to test
 from reg_agent.core.db import connection as db_connection

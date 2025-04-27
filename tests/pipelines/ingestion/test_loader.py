@@ -6,11 +6,11 @@ from unittest.mock import (
     MagicMock,
     call,
 )  # Import ANY for flexible argument matching
+
 import pytest  # Use pytest fixtures and mocker
 
 # Removed DuckDB import
 # Removed direct connect_db import
-
 from reg_agent.core.db.models import FileRecord  # Needed for creating expected objects
 from reg_agent.pipelines.ingestion.loader import ingest_files
 

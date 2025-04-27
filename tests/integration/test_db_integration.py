@@ -1,15 +1,15 @@
 """Integration tests for database interactions."""
 
-import pytest
 import datetime
 import uuid
 from pathlib import Path
 from typing import Generator
 
+import pytest
 from sqlalchemy.engine import Engine
 
 # Import components to test integration
-from reg_agent.core.db.connection import get_engine, create_db_and_tables, get_session
+from reg_agent.core.db.connection import create_db_and_tables, get_engine, get_session
 from reg_agent.core.db.models import FileRecord
 from reg_agent.core.db.repositories import FileRepository
 

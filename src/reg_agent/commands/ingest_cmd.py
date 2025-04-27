@@ -1,11 +1,11 @@
 from pathlib import Path
+
+import structlog
+import typer
 from typing_extensions import Annotated
 
-import typer
-import structlog
-
-from reg_agent.pipelines.ingestion.loader import ingest_files
 from reg_agent.core.db.connection import DEFAULT_DB_FILE
+from reg_agent.pipelines.ingestion.loader import ingest_files
 
 log = structlog.get_logger()
 

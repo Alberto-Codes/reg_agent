@@ -3,12 +3,13 @@ Defines the SQLModel ORM models for the database.
 """
 
 import datetime
-from typing import Optional, List, Dict # Import Dict
 import uuid  # Import uuid
-from sqlalchemy import TIMESTAMP, Column  # Import TIMESTAMP and Column
-from sqlalchemy.types import JSON # Import JSON
+from typing import Dict, Optional  # Import Dict
 
+from sqlalchemy import TIMESTAMP, Column  # Import TIMESTAMP and Column
+from sqlalchemy.types import JSON  # Import JSON
 from sqlmodel import Field, SQLModel
+
 # Remove unused imports
 # from sqlalchemy import Integer, Column, MetaData
 
