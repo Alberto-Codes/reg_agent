@@ -3,7 +3,6 @@ from typing import Optional
 
 import structlog
 import typer
-import asyncio
 import rich # Import rich for better output
 
 from reg_agent.core.db.connection import DEFAULT_DB_FILE
@@ -18,7 +17,7 @@ app = typer.Typer()
 @app.command(
     name="run", help="Ingest files from a source directory into the DuckDB database."
 )
-def run_ingestion(
+async def run_ingestion(
     source_dir: Path = typer.Argument(
         ...,
         exists=True,
@@ -79,8 +78,8 @@ def run_ingestion(
     log.info("Starting ingestion pipeline...")
     pipeline_results = None # Initialize
     try:
-        # Run the async pipeline function using asyncio.run()
-        pipeline_results = asyncio.run(run_ingestion_pipeline(source_dir=source_dir, db_file=db_file))
+        # Directly await the async pipeline function
+        pipeline_results = await run_ingestion_pipeline(source_dir=source_dir, db_file=db_file)
         log.info("Ingestion pipeline finished.")
     except Exception as e:
         # Catch potential exceptions during pipeline execution

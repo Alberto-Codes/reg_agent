@@ -57,8 +57,12 @@ async def run_task_3() -> Task3Result:  # Update return type annotation
         None  # Initialize outside try
     )
     final_result: Task3Result = {
-        "found": 0, "success": 0, "errors": 0, "error_details": []
-    } # Initialize default return
+        "found": 0,
+        "success": 0,
+        "errors": 0,
+        "error_details": [],
+    }
+    service_init_failed = False # Flag to indicate early return
 
     try:
         # --- Initialize Service --- #
@@ -66,17 +70,23 @@ async def run_task_3() -> Task3Result:  # Update return type annotation
             metadata_service = MetadataExtractionService()
             log.info("MetadataExtractionService initialized for Task 3.")
         except Exception as service_init_err:
-            err_msg = f"Failed to initialize MetadataExtractionService: {service_init_err}"
+            err_msg = (
+                "Failed to initialize MetadataExtractionService: "
+                f"{service_init_err}"
+            )
             log.exception(err_msg)
-            # Cannot proceed without the service
+            # Populate final_result directly and return early
             final_result["errors"] = 1
-            final_result["error_details"].append({
-                "record_id": "N/A",
-                "filename": "N/A",
-                "status": FileStatus.FAILED_METADATA, # Use this for service init failure
-                "error_message": err_msg
-            })
-            return final_result
+            final_result["error_details"] = [
+                {
+                    "record_id": "N/A",
+                    "filename": "N/A",
+                    "status": FileStatus.FAILED_METADATA,
+                    "error_message": err_msg,
+                }
+            ]
+            service_init_failed = True # Set flag
+            return final_result # Return immediately, skipping UoW and finally block
 
         # --- Process Records using UoW --- #
         try:
@@ -239,35 +249,37 @@ async def run_task_3() -> Task3Result:  # Update return type annotation
 
 
     finally:
-        # --- Ensure Service Cleanup --- #
-        if metadata_service and hasattr(metadata_service, "close"):
-            try:
-                log.info("Attempting to close MetadataExtractionService client.")
-                await metadata_service.close()
-                log.info("MetadataExtractionService client closed successfully.")
-            except Exception as close_err:
-                log.warning(
-                    "Error closing MetadataExtractionService client",
-                    error=str(close_err),
-                )
+        # Only run cleanup and final logging if service init didn't fail
+        if not service_init_failed:
+            # --- Ensure Service Cleanup --- #
+            if metadata_service and hasattr(metadata_service, "close"):
+                try:
+                    log.info("Attempting to close MetadataExtractionService client.")
+                    await metadata_service.close()
+                    log.info("MetadataExtractionService client closed successfully.")
+                except Exception as close_err:
+                    log.warning(
+                        "Error closing MetadataExtractionService client",
+                        error=str(close_err),
+                    )
 
-        # --- Update final result structure --- #
-        final_result["found"] = records_found
-        final_result["success"] = success_count
-        final_result["errors"] = error_count
-        final_result["error_details"] = error_details
+            # --- Update final result structure --- #
+            final_result["found"] = records_found
+            final_result["success"] = success_count
+            final_result["errors"] = error_count
+            final_result["error_details"] = error_details
 
-        # --- Log Final Summary --- #
-        # Explicitly type the log data dictionary
-        summary_log_data: Dict[str, Any] = {
-            "found": records_found,
-            "success": success_count,
-            "errors": error_count,
-        }
-        # Only include error_details in log if there are errors
-        if error_details:
-           summary_log_data["error_details"] = error_details
+            # --- Log Final Summary --- #
+            # Explicitly type the log data dictionary
+            summary_log_data: Dict[str, Any] = {
+                "found": records_found,
+                "success": success_count,
+                "errors": error_count,
+            }
+            # Only include error_details in log if there are errors
+            if error_details:
+               summary_log_data["error_details"] = error_details
 
-        log.info("Task 3 Summary", **summary_log_data)
+            log.info("Task 3 Summary", **summary_log_data)
 
     return final_result
