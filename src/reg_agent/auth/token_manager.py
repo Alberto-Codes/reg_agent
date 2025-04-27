@@ -160,7 +160,7 @@ class ImpersonatedTokenManager:
 
 
 # Example usage (for testing if run directly)
-async def _test_token_manager():
+async def _test_token_manager(): # pragma: no cover
     import asyncio
 
     load_dotenv()  # Load .env for TARGET_SA_NAME_OR_EMAIL
@@ -220,7 +220,7 @@ async def _test_token_manager():
         log.error("ImpersonatedTokenManager test failed.", exc_info=True)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": # pragma: no cover
     import asyncio
     import os
 
