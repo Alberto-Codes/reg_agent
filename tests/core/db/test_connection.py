@@ -96,13 +96,14 @@ def test_create_db_and_tables(test_engine: Engine):
     # Verify columns (optional, but good practice)
     columns = inspector.get_columns("filerecord")
     column_names = {col["name"] for col in columns}
-    # Update expected columns: expect 'id' again
+    # Update expected columns: expect 'id' again and new meta_data
     expected_columns = {
         "id",
         "source_path",
         "filename",
         "blob",
         "extracted_text",
+        "meta_data",
         "size_bytes",
         "last_modified_ts",
     }

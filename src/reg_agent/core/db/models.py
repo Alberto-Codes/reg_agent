@@ -3,9 +3,10 @@ Defines the SQLModel ORM models for the database.
 """
 
 import datetime
-from typing import Optional
+from typing import Optional, List, Dict # Import Dict
 import uuid  # Import uuid
 from sqlalchemy import TIMESTAMP, Column  # Import TIMESTAMP and Column
+from sqlalchemy.types import JSON # Import JSON
 
 from sqlmodel import Field, SQLModel
 # Remove unused imports
@@ -30,6 +31,8 @@ class FileRecord(SQLModel, table=True):
     blob: bytes
     # Allow extracted_text to be None if OCR fails or not applicable
     extracted_text: Optional[str] = Field(default=None)
+    # New field for structured metadata
+    meta_data: Optional[Dict] = Field(default=None, sa_column=Column(JSON))
     size_bytes: int
     # Explicitly use timezone-aware TIMESTAMP via sa_column
     last_modified_ts: datetime.datetime = Field(
