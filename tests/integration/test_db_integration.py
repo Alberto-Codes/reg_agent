@@ -1,10 +1,10 @@
 """Integration tests for database interactions."""
 
 import datetime
+import time  # Import time for potential sleep
 import uuid
 from pathlib import Path
 from typing import Generator
-import time # Import time for potential sleep
 
 import pytest
 from sqlalchemy.engine import Engine
@@ -73,7 +73,7 @@ def test_add_and_retrieve_file_record(db_engine: Engine):
         extracted_text="# Integration Test\nSome text.",
         size_bytes=24,
         last_modified_ts=timestamp,
-        status=FileStatus.PENDING_PROCESS
+        status=FileStatus.PENDING_PROCESS,
     )
 
     # --- Add record using repository ---
@@ -108,11 +108,15 @@ def test_add_and_retrieve_file_record(db_engine: Engine):
             # DuckDB might lose microsecond precision or return naive local time
             retrieved_naive_ts = retrieved_record.last_modified_ts
             if retrieved_naive_ts.tzinfo is None:
-                 # Assume the naive time is local, convert to aware UTC
-                 retrieved_ts_aware = retrieved_naive_ts.astimezone(datetime.timezone.utc)
+                # Assume the naive time is local, convert to aware UTC
+                retrieved_ts_aware = retrieved_naive_ts.astimezone(
+                    datetime.timezone.utc
+                )
             else:
-                 # Already timezone-aware (unexpected for duckdb, but handle it)
-                 retrieved_ts_aware = retrieved_naive_ts.astimezone(datetime.timezone.utc)
+                # Already timezone-aware (unexpected for duckdb, but handle it)
+                retrieved_ts_aware = retrieved_naive_ts.astimezone(
+                    datetime.timezone.utc
+                )
 
             # Also round original timestamp for comparison
             timestamp_rounded = timestamp.replace(microsecond=0)
@@ -126,10 +130,20 @@ def test_add_and_retrieve_file_record(db_engine: Engine):
             assert retrieved_record.created_at is not None
             assert retrieved_record.updated_at is not None
             # Convert these to UTC as well if they are naive
-            created_at_aware = retrieved_record.created_at.astimezone(datetime.timezone.utc) if retrieved_record.created_at.tzinfo is None else retrieved_record.created_at.astimezone(datetime.timezone.utc)
-            updated_at_aware = retrieved_record.updated_at.astimezone(datetime.timezone.utc) if retrieved_record.updated_at.tzinfo is None else retrieved_record.updated_at.astimezone(datetime.timezone.utc)
+            created_at_aware = (
+                retrieved_record.created_at.astimezone(datetime.timezone.utc)
+                if retrieved_record.created_at.tzinfo is None
+                else retrieved_record.created_at.astimezone(datetime.timezone.utc)
+            )
+            updated_at_aware = (
+                retrieved_record.updated_at.astimezone(datetime.timezone.utc)
+                if retrieved_record.updated_at.tzinfo is None
+                else retrieved_record.updated_at.astimezone(datetime.timezone.utc)
+            )
 
-            assert abs(updated_at_aware - created_at_aware) < datetime.timedelta(seconds=5) # Allow slightly larger diff
+            assert abs(updated_at_aware - created_at_aware) < datetime.timedelta(
+                seconds=5
+            )  # Allow slightly larger diff
 
     except Exception as e:
         pytest.fail(f"Retrieving record or asserting failed with exception: {e}")
@@ -151,7 +165,7 @@ def test_exists_by_source_path_integration(db_engine: Engine):
         blob=b"exists test",
         size_bytes=11,
         last_modified_ts=timestamp,
-        status=FileStatus.PENDING_PROCESS
+        status=FileStatus.PENDING_PROCESS,
     )
 
     # --- Check existence before adding ---

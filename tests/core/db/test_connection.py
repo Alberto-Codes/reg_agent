@@ -6,8 +6,8 @@ from typing import Generator
 import pytest
 from sqlalchemy import inspect as sql_inspect  # Renamed to avoid naming conflict
 from sqlalchemy.engine import Engine
-from sqlmodel import Session, SQLModel
 from sqlalchemy.orm import sessionmaker
+from sqlmodel import Session, SQLModel
 
 # Module to test
 from reg_agent.core.db import connection as db_connection
@@ -31,7 +31,7 @@ def test_engine(tmp_path: Path) -> Engine:
     db_connection.create_db_and_tables(engine)
     yield engine
     # Clean up? DuckDB file is in tmp_path, should be auto-cleaned
-    db_connection._sync_engine = None # Explicitly clear after test
+    db_connection._sync_engine = None  # Explicitly clear after test
     engine.dispose()
 
 
@@ -82,7 +82,9 @@ def test_create_db_and_tables(test_engine: Engine):
     SQLModel.metadata.drop_all(test_engine)
 
     inspector = sql_inspect(test_engine)
-    assert "filerecord" not in inspector.get_table_names(), "Table should not exist initially"
+    assert "filerecord" not in inspector.get_table_names(), (
+        "Table should not exist initially"
+    )
 
     db_connection.create_db_and_tables(engine=test_engine)
 
@@ -103,9 +105,9 @@ def test_create_db_and_tables(test_engine: Engine):
         "meta_data",
         "size_bytes",
         "last_modified_ts",
-        "status",         # Added
-        "created_at",     # Added
-        "updated_at",     # Added
+        "status",  # Added
+        "created_at",  # Added
+        "updated_at",  # Added
     }
     assert column_names == expected_columns, (
         f"Table columns mismatch. Got: {column_names}, Expected: {expected_columns}"
@@ -219,7 +221,7 @@ def test_create_db_and_tables_engine_none(mocker, caplog):
         "reg_agent.core.db.connection.SQLModel.metadata.create_all"
     )
 
-    db_connection.create_db_and_tables(engine=None) # Trigger internal get_engine call
+    db_connection.create_db_and_tables(engine=None)  # Trigger internal get_engine call
 
     mock_get_engine.assert_called_once()
     mock_create_all.assert_not_called()
@@ -252,8 +254,10 @@ def test_get_session_engine_none(mocker, caplog):
 
     # Expect RuntimeError raised by our code
     with pytest.raises(RuntimeError, match="Sync engine not initialized."):
-        with db_connection.get_session(engine=None) as _: # Trigger internal get_engine call
-            pass # Should not reach here
+        with db_connection.get_session(
+            engine=None
+        ) as _:  # Trigger internal get_engine call
+            pass  # Should not reach here
 
     mock_get_engine.assert_called_once()
     mock_session_init.assert_not_called()

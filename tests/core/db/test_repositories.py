@@ -7,12 +7,12 @@ import uuid
 from unittest.mock import MagicMock
 
 import pytest
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 # Modules/Classes to test
 from reg_agent.core.db import models
-from reg_agent.core.db.repositories import FileRepository
 from reg_agent.core.db.models import FileRecord, FileStatus
+from reg_agent.core.db.repositories import FileRepository
 
 # Configure structlog for testing (if capturing logs)
 # structlog.configure(processors=[structlog.testing.LogCapture()])
@@ -140,8 +140,12 @@ def test_get_records_by_status_found(mock_session: MagicMock):
     repo = FileRepository(mock_session)
     # Dummy records to be returned
     records = [
-        FileRecord(id=uuid.uuid4(), source_path="/p1.txt", status=FileStatus.PENDING_PROCESS),
-        FileRecord(id=uuid.uuid4(), source_path="/p2.txt", status=FileStatus.PENDING_PROCESS),
+        FileRecord(
+            id=uuid.uuid4(), source_path="/p1.txt", status=FileStatus.PENDING_PROCESS
+        ),
+        FileRecord(
+            id=uuid.uuid4(), source_path="/p2.txt", status=FileStatus.PENDING_PROCESS
+        ),
     ]
     # Mock session.exec(...).all() to return the dummy records
     mock_result = MagicMock()
@@ -151,7 +155,7 @@ def test_get_records_by_status_found(mock_session: MagicMock):
     found_records = repo.get_records_by_status(FileStatus.PENDING_PROCESS)
 
     assert found_records == records
-    mock_session.exec.assert_called_once() # Verify query execution
+    mock_session.exec.assert_called_once()  # Verify query execution
     # Optionally, check the statement passed to exec if needed, but can be complex
 
 
@@ -178,6 +182,7 @@ def test_get_records_by_status_failure(mock_session: MagicMock):
 
 # --- Tests for get_records_needing_ocr ---
 
+
 def test_get_records_needing_ocr_found(mock_session: MagicMock):
     repo = FileRepository(mock_session)
     records = [
@@ -194,6 +199,7 @@ def test_get_records_needing_ocr_found(mock_session: MagicMock):
     mock_session.exec.assert_called_once()
     # Could add more specific checks on the select statement if needed
 
+
 def test_get_records_needing_ocr_not_found(mock_session: MagicMock):
     repo = FileRepository(mock_session)
     mock_result = MagicMock()
@@ -205,6 +211,7 @@ def test_get_records_needing_ocr_not_found(mock_session: MagicMock):
     assert found_records == []
     mock_session.exec.assert_called_once()
 
+
 def test_get_records_needing_ocr_failure(mock_session: MagicMock):
     repo = FileRepository(mock_session)
     mock_session.exec.side_effect = Exception("DB Query Error for OCR")
@@ -212,13 +219,25 @@ def test_get_records_needing_ocr_failure(mock_session: MagicMock):
         repo.get_records_needing_ocr()
     mock_session.exec.assert_called_once()
 
+
 # --- Tests for get_records_needing_metadata ---
+
 
 def test_get_records_needing_metadata_found(mock_session: MagicMock):
     repo = FileRepository(mock_session)
     records = [
-        FileRecord(id=uuid.uuid4(), source_path="/needs_meta1.txt", extracted_text="text", meta_data=None),
-        FileRecord(id=uuid.uuid4(), source_path="/needs_meta2.pdf", extracted_text="more text", meta_data=None),
+        FileRecord(
+            id=uuid.uuid4(),
+            source_path="/needs_meta1.txt",
+            extracted_text="text",
+            meta_data=None,
+        ),
+        FileRecord(
+            id=uuid.uuid4(),
+            source_path="/needs_meta2.pdf",
+            extracted_text="more text",
+            meta_data=None,
+        ),
     ]
     mock_result = MagicMock()
     mock_result.all.return_value = records
@@ -228,6 +247,7 @@ def test_get_records_needing_metadata_found(mock_session: MagicMock):
 
     assert found_records == records
     mock_session.exec.assert_called_once()
+
 
 def test_get_records_needing_metadata_not_found(mock_session: MagicMock):
     repo = FileRepository(mock_session)
@@ -239,6 +259,7 @@ def test_get_records_needing_metadata_not_found(mock_session: MagicMock):
 
     assert found_records == []
     mock_session.exec.assert_called_once()
+
 
 def test_get_records_needing_metadata_failure(mock_session: MagicMock):
     repo = FileRepository(mock_session)

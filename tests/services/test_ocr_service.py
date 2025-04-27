@@ -103,9 +103,7 @@ def test_extract_markdown_success(
     result = service.extract_markdown_from_file(mock_pdf_path)
 
     assert result == expected_markdown
-    service.converter.convert_all.assert_called_once_with(
-        [mock_pdf_path]
-    )
+    service.converter.convert_all.assert_called_once_with([mock_pdf_path])
 
 
 def test_extract_markdown_non_pdf(mocker):
@@ -170,9 +168,7 @@ def test_extract_markdown_conversion_failure(mocker, mock_conversion_result):
     result = service.extract_markdown_from_file(mock_pdf_path)
 
     assert result is None
-    service.converter.convert_all.assert_called_once_with(
-        [mock_pdf_path]
-    )
+    service.converter.convert_all.assert_called_once_with([mock_pdf_path])
 
 
 def test_extract_markdown_partial_success_with_doc(
@@ -199,9 +195,7 @@ def test_extract_markdown_partial_success_with_doc(
     assert (
         result == expected_markdown
     )  # Expect markdown even on partial success if doc exists
-    service.converter.convert_all.assert_called_once_with(
-        [mock_pdf_path]
-    )
+    service.converter.convert_all.assert_called_once_with([mock_pdf_path])
 
 
 def test_extract_markdown_partial_success_no_doc(mocker, mock_conversion_result):
@@ -222,9 +216,7 @@ def test_extract_markdown_partial_success_no_doc(mocker, mock_conversion_result)
     result = service.extract_markdown_from_file(mock_pdf_path)
 
     assert result is None
-    service.converter.convert_all.assert_called_once_with(
-        [mock_pdf_path]
-    )
+    service.converter.convert_all.assert_called_once_with([mock_pdf_path])
 
 
 def test_extract_markdown_unexpected_exception(mocker):
@@ -240,6 +232,4 @@ def test_extract_markdown_unexpected_exception(mocker):
     result = service.extract_markdown_from_file(mock_pdf_path)
 
     assert result is None
-    service.converter.convert_all.assert_called_once_with(
-        [mock_pdf_path]
-    )
+    service.converter.convert_all.assert_called_once_with([mock_pdf_path])

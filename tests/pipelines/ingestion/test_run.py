@@ -1,10 +1,9 @@
 # tests/pipelines/ingestion/test_run.py
 
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock, ANY
-import asyncio
+from unittest.mock import ANY, AsyncMock, MagicMock
 
+import pytest
 from sqlalchemy.engine import Engine
 
 # Module to test - Import will happen inside tests
@@ -14,6 +13,7 @@ MOCK_SOURCE_DIR = "/mock/source"
 MOCK_DB_FILE = "/mock/db.sqlite"
 
 # --- Fixtures ---
+
 
 @pytest.fixture()
 def mock_dependencies(mocker):
@@ -31,6 +31,7 @@ def mock_dependencies(mocker):
     mock_default_db_instance.__str__.return_value = str(DEFAULT_DB_FILE)
     mock_db_file_instance = MagicMock(spec=Path)
     mock_db_file_instance.__str__.return_value = MOCK_DB_FILE
+
     def path_side_effect(path_arg):
         # Make Path() return specific mocks based on input
         if path_arg == MOCK_SOURCE_DIR:
@@ -38,9 +39,10 @@ def mock_dependencies(mocker):
         elif path_arg == MOCK_DB_FILE:
             return mock_db_file_instance
         elif path_arg == DEFAULT_DB_FILE:
-             return mock_default_db_instance
+            return mock_default_db_instance
         else:
             return MagicMock(spec=Path, __str__=lambda: str(path_arg))
+
     mock_p.side_effect = path_side_effect
     mocks["Path"] = mock_p
     mocks["source_path_instance"] = mock_source_instance
@@ -49,17 +51,29 @@ def mock_dependencies(mocker):
 
     # Mock DB setup (Patching where used in run.py)
     mocks["engine"] = MagicMock(spec=Engine)
-    mocks["get_engine"] = mocker.patch("reg_agent.pipelines.ingestion.run.get_engine", return_value=mocks["engine"])
-    mocks["create_db"] = mocker.patch("reg_agent.pipelines.ingestion.run.create_db_and_tables")
+    mocks["get_engine"] = mocker.patch(
+        "reg_agent.pipelines.ingestion.run.get_engine", return_value=mocks["engine"]
+    )
+    mocks["create_db"] = mocker.patch(
+        "reg_agent.pipelines.ingestion.run.create_db_and_tables"
+    )
 
     # Mock Tasks (Patching where used in run.py)
-    mocks["run_task_1"] = mocker.patch("reg_agent.pipelines.ingestion.run.run_task_1", return_value=(10, 2, 0))
-    mocks["run_task_2"] = mocker.patch("reg_agent.pipelines.ingestion.run.run_task_2", return_value=(8, 7, 1, 0))
+    mocks["run_task_1"] = mocker.patch(
+        "reg_agent.pipelines.ingestion.run.run_task_1", return_value=(10, 2, 0)
+    )
+    mocks["run_task_2"] = mocker.patch(
+        "reg_agent.pipelines.ingestion.run.run_task_2", return_value=(8, 7, 1, 0)
+    )
     t3_result = (5, 4, 1)
     mocks["run_task_3_async"] = AsyncMock(return_value=t3_result)
-    mocker.patch("reg_agent.pipelines.ingestion.run.run_task_3", new=mocks["run_task_3_async"])
+    mocker.patch(
+        "reg_agent.pipelines.ingestion.run.run_task_3", new=mocks["run_task_3_async"]
+    )
     # Patch asyncio.run where it's used in run.py
-    mocks["asyncio_run"] = mocker.patch("reg_agent.pipelines.ingestion.run.asyncio.run", return_value=t3_result)
+    mocks["asyncio_run"] = mocker.patch(
+        "reg_agent.pipelines.ingestion.run.asyncio.run", return_value=t3_result
+    )
 
     # Mock log (Patching where used in run.py)
     mocks["log"] = MagicMock()
@@ -69,17 +83,25 @@ def mock_dependencies(mocker):
     def passthrough_decorator(task_name):
         def decorator(func):
             return func
+
         return decorator
-    mocker.patch("reg_agent.pipelines.ingestion.run.log_task_duration", passthrough_decorator)
+
+    mocker.patch(
+        "reg_agent.pipelines.ingestion.run.log_task_duration", passthrough_decorator
+    )
 
     return mocks
 
 
 # --- Test Cases ---
 
+
 def test_run_pipeline_success(mock_dependencies):
     """Test the successful run of the entire pipeline."""
-    from reg_agent.pipelines.ingestion.run import run_ingestion_pipeline, Path # Import Path locally too
+    from reg_agent.pipelines.ingestion.run import (
+        Path,
+        run_ingestion_pipeline,
+    )  # Import Path locally too
 
     mock_p_constructor = mock_dependencies["Path"]
     mock_get_engine = mock_dependencies["get_engine"]
@@ -87,7 +109,7 @@ def test_run_pipeline_success(mock_dependencies):
     mock_engine = mock_dependencies["engine"]
     mock_t1 = mock_dependencies["run_task_1"]
     mock_t2 = mock_dependencies["run_task_2"]
-    mock_t3_async = mock_dependencies["run_task_3_async"]
+    _mock_t3_async = mock_dependencies["run_task_3_async"]
     mock_asyncio_run = mock_dependencies["asyncio_run"]
     mock_log = mock_dependencies["log"]
     source_path_instance = mock_dependencies["source_path_instance"]
@@ -112,17 +134,33 @@ def test_run_pipeline_success(mock_dependencies):
     mock_asyncio_run.assert_called_once()
 
     # Check logging
-    mock_log.info.assert_any_call("Pipeline run details", source_dir=str(source_path_instance), db_file=str(db_path_instance))
-    mock_log.info.assert_any_call("Task 1 (Create Records) summary", inserted=10, skipped=2, errors=0)
-    mock_log.info.assert_any_call("Task 2 (OCR) summary", found=8, success=7, skipped=1, errors=0)
-    mock_log.info.assert_any_call("Task 3 (Metadata) summary", found=5, success=4, errors=1)
-    mock_log.info.assert_any_call("Pipeline task summaries complete.", task1_results=(10, 2, 0), task2_results=(8, 7, 1, 0), task3_results=(5, 4, 1))
+    mock_log.info.assert_any_call(
+        "Pipeline run details",
+        source_dir=str(source_path_instance),
+        db_file=str(db_path_instance),
+    )
+    mock_log.info.assert_any_call(
+        "Task 1 (Create Records) summary", inserted=10, skipped=2, errors=0
+    )
+    mock_log.info.assert_any_call(
+        "Task 2 (OCR) summary", found=8, success=7, skipped=1, errors=0
+    )
+    mock_log.info.assert_any_call(
+        "Task 3 (Metadata) summary", found=5, success=4, errors=1
+    )
+    mock_log.info.assert_any_call(
+        "Pipeline task summaries complete.",
+        task1_results=(10, 2, 0),
+        task2_results=(8, 7, 1, 0),
+        task3_results=(5, 4, 1),
+    )
     mock_log.error.assert_not_called()
     mock_log.exception.assert_not_called()
 
+
 def test_run_pipeline_invalid_source_dir(mock_dependencies):
     """Test pipeline halts if source directory is invalid."""
-    from reg_agent.pipelines.ingestion.run import run_ingestion_pipeline, Path
+    from reg_agent.pipelines.ingestion.run import Path, run_ingestion_pipeline
 
     mock_get_engine = mock_dependencies["get_engine"]
     mock_create_db = mock_dependencies["create_db"]
@@ -137,15 +175,16 @@ def test_run_pipeline_invalid_source_dir(mock_dependencies):
     source_path_instance.is_dir.assert_called_once()
     mock_log.error.assert_called_once_with(
         "Source directory does not exist or is not a directory. Halting pipeline.",
-        path=str(source_path_instance)
+        path=str(source_path_instance),
     )
     mock_get_engine.assert_not_called()
     mock_create_db.assert_not_called()
     mock_t1.assert_not_called()
 
+
 def test_run_pipeline_get_engine_fails(mock_dependencies):
     """Test pipeline halts if get_engine fails."""
-    from reg_agent.pipelines.ingestion.run import run_ingestion_pipeline, Path, DEFAULT_DB_FILE
+    from reg_agent.pipelines.ingestion.run import Path, run_ingestion_pipeline
 
     mock_get_engine = mock_dependencies["get_engine"]
     mock_create_db = mock_dependencies["create_db"]
@@ -167,9 +206,10 @@ def test_run_pipeline_get_engine_fails(mock_dependencies):
     mock_create_db.assert_not_called()
     mock_t1.assert_not_called()
 
+
 def test_run_pipeline_create_db_fails(mock_dependencies):
     """Test pipeline halts if create_db_and_tables fails."""
-    from reg_agent.pipelines.ingestion.run import run_ingestion_pipeline, Path, DEFAULT_DB_FILE
+    from reg_agent.pipelines.ingestion.run import Path, run_ingestion_pipeline
 
     mock_get_engine = mock_dependencies["get_engine"]
     mock_create_db = mock_dependencies["create_db"]
@@ -191,9 +231,10 @@ def test_run_pipeline_create_db_fails(mock_dependencies):
     )
     mock_t1.assert_not_called()
 
+
 def test_run_pipeline_task1_fails(mock_dependencies):
     """Test pipeline handles exception during Task 1."""
-    from reg_agent.pipelines.ingestion.run import run_ingestion_pipeline, Path
+    from reg_agent.pipelines.ingestion.run import Path, run_ingestion_pipeline
 
     mock_engine = mock_dependencies["engine"]
     mock_t1 = mock_dependencies["run_task_1"]
@@ -210,14 +251,15 @@ def test_run_pipeline_task1_fails(mock_dependencies):
     mock_t1.assert_called_once_with(mock_engine, source_path_instance)
     mock_log.exception.assert_called_once_with(
         "An unexpected error occurred during pipeline execution.",
-        error="Cannot read file"
+        error="Cannot read file",
     )
     mock_t2.assert_not_called()
     mock_asyncio_run.assert_not_called()
 
+
 def test_run_pipeline_task2_fails(mock_dependencies):
     """Test pipeline handles exception during Task 2."""
-    from reg_agent.pipelines.ingestion.run import run_ingestion_pipeline, Path
+    from reg_agent.pipelines.ingestion.run import Path, run_ingestion_pipeline
 
     mock_engine = mock_dependencies["engine"]
     mock_t1 = mock_dependencies["run_task_1"]
@@ -235,18 +277,19 @@ def test_run_pipeline_task2_fails(mock_dependencies):
     mock_t2.assert_called_once_with(mock_engine)
     mock_log.exception.assert_called_once_with(
         "An unexpected error occurred during pipeline execution.",
-        error="OCR Engine unavailable"
+        error="OCR Engine unavailable",
     )
     mock_asyncio_run.assert_not_called()
 
+
 def test_run_pipeline_task3_fails(mock_dependencies):
     """Test pipeline handles exception during Task 3 (asyncio.run)."""
-    from reg_agent.pipelines.ingestion.run import run_ingestion_pipeline, Path
+    from reg_agent.pipelines.ingestion.run import Path, run_ingestion_pipeline
 
     mock_engine = mock_dependencies["engine"]
     mock_t1 = mock_dependencies["run_task_1"]
     mock_t2 = mock_dependencies["run_task_2"]
-    mock_t3_async = mock_dependencies["run_task_3_async"]
+    _mock_t3_async = mock_dependencies["run_task_3_async"]
     mock_asyncio_run = mock_dependencies["asyncio_run"]
     mock_log = mock_dependencies["log"]
     source_path_instance = mock_dependencies["source_path_instance"]
@@ -261,5 +304,5 @@ def test_run_pipeline_task3_fails(mock_dependencies):
     mock_asyncio_run.assert_called_once()
     mock_log.exception.assert_called_once_with(
         "An unexpected error occurred during pipeline execution.",
-        error="LLM endpoint down"
-    ) 
+        error="LLM endpoint down",
+    )
