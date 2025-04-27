@@ -7,9 +7,9 @@ import pytest
 
 from reg_agent.core.db.models import FileRecord, FileStatus
 from reg_agent.core.db.repositories import DocumentRepository
+from reg_agent.core.db.unit_of_work import SqlModelUnitOfWork
 from reg_agent.pipelines.ingestion.tasks.task_2_ocr import run_task_2
 from reg_agent.services.ocr_service import OcrService
-from reg_agent.core.db.unit_of_work import SqlModelUnitOfWork
 
 # Use the existing engine fixture from connection tests
 # from tests.core.db.test_connection import test_engine # noqa: F401

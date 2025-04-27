@@ -2,7 +2,7 @@
 
 import asyncio
 import uuid  # Import uuid
-from typing import List, Optional, TypedDict, Dict, Any
+from typing import Any, Dict, List, Optional, TypedDict
 
 import structlog
 
@@ -62,7 +62,7 @@ async def run_task_3() -> Task3Result:  # Update return type annotation
         "errors": 0,
         "error_details": [],
     }
-    service_init_failed = False # Flag to indicate early return
+    service_init_failed = False  # Flag to indicate early return
 
     try:
         # --- Initialize Service --- #
@@ -71,8 +71,7 @@ async def run_task_3() -> Task3Result:  # Update return type annotation
             log.info("MetadataExtractionService initialized for Task 3.")
         except Exception as service_init_err:
             err_msg = (
-                "Failed to initialize MetadataExtractionService: "
-                f"{service_init_err}"
+                f"Failed to initialize MetadataExtractionService: {service_init_err}"
             )
             log.exception(err_msg)
             # Populate final_result directly and return early
@@ -85,8 +84,8 @@ async def run_task_3() -> Task3Result:  # Update return type annotation
                     "error_message": err_msg,
                 }
             ]
-            service_init_failed = True # Set flag
-            return final_result # Return immediately, skipping UoW and finally block
+            service_init_failed = True  # Set flag
+            return final_result  # Return immediately, skipping UoW and finally block
 
         # --- Process Records using UoW --- #
         try:
@@ -96,7 +95,7 @@ async def run_task_3() -> Task3Result:  # Update return type annotation
                 statuses_to_process = [
                     FileStatus.PENDING_METADATA,
                     FileStatus.FAILED_METADATA,
-                    FileStatus.FAILED_LLM_OUTPUT, # Also retry LLM output failures
+                    FileStatus.FAILED_LLM_OUTPUT,  # Also retry LLM output failures
                 ]
                 log.info(
                     "Querying for records with statuses", statuses=statuses_to_process
@@ -115,16 +114,24 @@ async def run_task_3() -> Task3Result:  # Update return type annotation
                     for record in records_to_process:
                         # Ensure record.id is a UUID before proceeding
                         if not isinstance(record.id, uuid.UUID):
-                           log.error("Invalid record ID type found", record_id=record.id)
-                           # Handle this case, maybe skip or assign a default error
-                           error_count += 1
-                           error_details.append({
-                               "record_id": str(record.id) if record.id else "Unknown ID",
-                               "filename": record.filename if record.filename else "Unknown Filename",
-                               "status": FileStatus.FAILED_UNKNOWN,
-                               "error_message": "Invalid record ID type encountered"
-                           })
-                           continue # Skip this record
+                            log.error(
+                                "Invalid record ID type found", record_id=record.id
+                            )
+                            # Handle this case, maybe skip or assign a default error
+                            error_count += 1
+                            error_details.append(
+                                {
+                                    "record_id": str(record.id)
+                                    if record.id
+                                    else "Unknown ID",
+                                    "filename": record.filename
+                                    if record.filename
+                                    else "Unknown Filename",
+                                    "status": FileStatus.FAILED_UNKNOWN,
+                                    "error_message": "Invalid record ID type encountered",
+                                }
+                            )
+                            continue  # Skip this record
 
                         await asyncio.sleep(2)  # Keep the delay
 
@@ -136,18 +143,22 @@ async def run_task_3() -> Task3Result:  # Update return type annotation
                                 "Staging status to FAILED_UNKNOWN", record_id=record.id
                             )
                             error_count += 1
-                            error_details.append({ # Add error detail
-                                "record_id": str(record.id),
-                                "filename": record.filename,
-                                "status": FileStatus.FAILED_UNKNOWN,
-                                "error_message": err_msg
-                            })
+                            error_details.append(
+                                {  # Add error detail
+                                    "record_id": str(record.id),
+                                    "filename": record.filename,
+                                    "status": FileStatus.FAILED_UNKNOWN,
+                                    "error_message": err_msg,
+                                }
+                            )
                             continue
 
                         # --- Call Metadata Service with Retry Logic --- #
                         extracted_meta_model = None  # Initialize before retry loop
                         service_call_succeeded = False
-                        final_exception_message = "No error occurred" # Store last exception message
+                        final_exception_message = (
+                            "No error occurred"  # Store last exception message
+                        )
 
                         for attempt in range(MAX_RETRIES):
                             try:
@@ -166,7 +177,7 @@ async def run_task_3() -> Task3Result:  # Update return type annotation
                                 break  # Exit retry loop on success
 
                             except Exception as e:
-                                final_exception_message = str(e) # Update last error
+                                final_exception_message = str(e)  # Update last error
                                 log.warning(
                                     "Metadata extraction attempt failed",
                                     record_id=record.id,
@@ -212,12 +223,14 @@ async def run_task_3() -> Task3Result:  # Update return type annotation
                                     record_id=record.id,
                                 )
                                 error_count += 1
-                                error_details.append({ # Add error detail
-                                    "record_id": str(record.id),
-                                    "filename": record.filename,
-                                    "status": FileStatus.FAILED_LLM_OUTPUT,
-                                    "error_message": err_msg
-                                })
+                                error_details.append(
+                                    {  # Add error detail
+                                        "record_id": str(record.id),
+                                        "filename": record.filename,
+                                        "status": FileStatus.FAILED_LLM_OUTPUT,
+                                        "error_message": err_msg,
+                                    }
+                                )
                         else:
                             # Service call failed after all retries
                             record.status = FileStatus.FAILED_METADATA
@@ -227,26 +240,29 @@ async def run_task_3() -> Task3Result:  # Update return type annotation
                                 record_id=record.id,
                             )
                             error_count += 1
-                            error_details.append({ # Add error detail
-                                "record_id": str(record.id),
-                                "filename": record.filename,
-                                "status": FileStatus.FAILED_METADATA,
-                                "error_message": err_msg
-                            })
+                            error_details.append(
+                                {  # Add error detail
+                                    "record_id": str(record.id),
+                                    "filename": record.filename,
+                                    "status": FileStatus.FAILED_METADATA,
+                                    "error_message": err_msg,
+                                }
+                            )
 
         except Exception as e:
             # Catches errors initializing UoW or during UoW commit/rollback
             err_msg = f"Error during Task 3 Unit of Work execution: {e}"
             log.exception(err_msg)
             # Indicate a general UoW error - might affect multiple records
-            error_count += 1 # Count this as one major error for now
-            error_details.append({
-                "record_id": "N/A",
-                "filename": "N/A",
-                "status": FileStatus.FAILED_UNKNOWN,
-                "error_message": err_msg
-            })
-
+            error_count += 1  # Count this as one major error for now
+            error_details.append(
+                {
+                    "record_id": "N/A",
+                    "filename": "N/A",
+                    "status": FileStatus.FAILED_UNKNOWN,
+                    "error_message": err_msg,
+                }
+            )
 
     finally:
         # Only run cleanup and final logging if service init didn't fail
@@ -278,7 +294,7 @@ async def run_task_3() -> Task3Result:  # Update return type annotation
             }
             # Only include error_details in log if there are errors
             if error_details:
-               summary_log_data["error_details"] = error_details
+                summary_log_data["error_details"] = error_details
 
             log.info("Task 3 Summary", **summary_log_data)
 

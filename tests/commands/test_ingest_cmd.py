@@ -1,18 +1,20 @@
-from typer.testing import CliRunner
 from pathlib import Path
+from typing import Any, List, Optional
 from unittest.mock import AsyncMock
+
 import pytest
-from reg_agent.core.db.models import FileStatus
-from typing import List, Optional, Any
 import typer
+from typer.testing import CliRunner
 
 # Import the function directly, not the app
 from reg_agent.commands.ingest_cmd import run_ingestion
+from reg_agent.core.db.models import FileStatus
 
 # Initialize runner to keep stdout and stderr separate
 # Use try_io=True to capture low-level I/O which might include structlog stderr
 runner = CliRunner(mix_stderr=False)
 # runner = CliRunner(mix_stderr=False) # type: ignore
+
 
 # Define a helper function for the expected result structure
 def create_mock_pipeline_result(task3_errors: Optional[List[Any]] = None):
@@ -25,8 +27,8 @@ def create_mock_pipeline_result(task3_errors: Optional[List[Any]] = None):
             "found": 1,
             "success": 1 if not actual_task3_errors else 0,
             "errors": len(actual_task3_errors),
-            "error_details": actual_task3_errors
-        }
+            "error_details": actual_task3_errors,
+        },
     }
 
 
@@ -41,7 +43,7 @@ async def test_ingest_run_success(tmp_path, mocker):
     mock_pipeline_run = mocker.patch(
         "reg_agent.commands.ingest_cmd.run_ingestion_pipeline",
         new_callable=AsyncMock,
-        return_value=create_mock_pipeline_result()
+        return_value=create_mock_pipeline_result(),
     )
     # Mock Path.unlink and mkdir for isolated testing
     mock_unlink = mocker.patch.object(Path, "unlink")
@@ -127,7 +129,7 @@ async def test_ingest_run_recreate_db_success(tmp_path, mocker):
     mock_pipeline_run = mocker.patch(
         "reg_agent.commands.ingest_cmd.run_ingestion_pipeline",
         new_callable=AsyncMock,
-        return_value=create_mock_pipeline_result()
+        return_value=create_mock_pipeline_result(),
     )
 
     # Directly call the command function
@@ -195,7 +197,7 @@ async def test_ingest_run_pipeline_exception(tmp_path, mocker):
     mock_pipeline_run = mocker.patch(
         "reg_agent.commands.ingest_cmd.run_ingestion_pipeline",
         new_callable=AsyncMock,
-        side_effect=pipeline_error
+        side_effect=pipeline_error,
     )
     mock_mkdir = mocker.patch.object(Path, "mkdir")
 
@@ -203,7 +205,7 @@ async def test_ingest_run_pipeline_exception(tmp_path, mocker):
     with pytest.raises(typer.Exit) as excinfo:
         await run_ingestion(source_dir=source_dir, db_path=db_file, recreate_db=False)
 
-    assert excinfo.value.exit_code != 0 # Check the exit code on the exception
+    assert excinfo.value.exit_code != 0  # Check the exit code on the exception
     mock_pipeline_run.assert_awaited_once()
     mock_mkdir.assert_called_once()
 
@@ -224,21 +226,21 @@ async def test_ingest_run_reports_task3_errors(tmp_path, mocker):
             "record_id": "uuid1",
             "filename": "file_failed_api.pdf",
             "status": FileStatus.FAILED_METADATA,
-            "error_message": "API Error 429"
+            "error_message": "API Error 429",
         },
         {
             "record_id": "uuid2",
             "filename": "file_bad_output.pdf",
             "status": FileStatus.FAILED_LLM_OUTPUT,
-            "error_message": "LLM output invalid/unparsable"
-        }
+            "error_message": "LLM output invalid/unparsable",
+        },
     ]
     mock_pipeline_result = create_mock_pipeline_result(task3_errors=mock_errors)
 
     mock_pipeline_run = mocker.patch(
         "reg_agent.commands.ingest_cmd.run_ingestion_pipeline",
         new_callable=AsyncMock,
-        return_value=mock_pipeline_result
+        return_value=mock_pipeline_result,
     )
     mock_mkdir = mocker.patch.object(Path, "mkdir")
 
@@ -261,6 +263,7 @@ async def test_ingest_run_reports_task3_errors(tmp_path, mocker):
     assert str(FileStatus.FAILED_LLM_OUTPUT) in output
     assert "LLM output invalid/unparsable" in output
     assert "Check logs for full tracebacks" in output
+
 
 # Add tests for db deletion failure, directory creation failure if needed
 # ...

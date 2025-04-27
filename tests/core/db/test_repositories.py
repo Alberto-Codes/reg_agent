@@ -4,8 +4,8 @@ Unit tests for the repository classes.
 
 import datetime
 import uuid
-from typing import Generator
 from datetime import timezone
+from typing import Generator
 
 import pytest
 from sqlmodel import Session, SQLModel, create_engine

@@ -4,21 +4,21 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 # from sqlalchemy.engine import Engine # Removed
 # from sqlmodel import Session # Removed
-
 from reg_agent.core.db.models import FileRecord, FileStatus
 
 # Keep this for type hinting the mock repository
 from reg_agent.core.db.repositories import DocumentRepository
+
+# Import UoW for type hinting the mock
+from reg_agent.core.db.unit_of_work import SqlModelUnitOfWork
 from reg_agent.pipelines.ingestion.tasks.task_3_metadata import (
     MetadataExtractionService,
     Task3Result,
     run_task_3,
 )
-
-# Import UoW for type hinting the mock
-from reg_agent.core.db.unit_of_work import SqlModelUnitOfWork
 from reg_agent.schemas.metadata import RegulationDocumentMetadata
 
 # --- Fixtures ---
@@ -250,7 +250,9 @@ async def test_run_task_3_metadata_extraction_returns_none(
     assert len(result["error_details"]) == 2
     assert result["error_details"][0]["status"] == FileStatus.FAILED_LLM_OUTPUT
     assert result["error_details"][1]["status"] == FileStatus.FAILED_LLM_OUTPUT
-    assert "LLM output invalid/unparsable" in result["error_details"][0]["error_message"]
+    assert (
+        "LLM output invalid/unparsable" in result["error_details"][0]["error_message"]
+    )
 
     assert mock_metadata_service.extract_metadata.call_count == 2
     # Check final status is FAILED_LLM_OUTPUT
@@ -332,7 +334,9 @@ async def test_run_task_3_service_init_fails(mocker):
     assert result["success"] == 0
     assert result["errors"] == 1  # Single error for service init failure
     assert len(result["error_details"]) == 1
-    assert result["error_details"][0]["record_id"] == "N/A"  # Indicate service level error
+    assert (
+        result["error_details"][0]["record_id"] == "N/A"
+    )  # Indicate service level error
     assert result["error_details"][0]["status"] == FileStatus.FAILED_METADATA
     assert init_error_message in result["error_details"][0]["error_message"]
 

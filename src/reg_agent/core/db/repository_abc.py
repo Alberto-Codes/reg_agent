@@ -44,7 +44,9 @@ class AbstractDocumentRepository(AbstractRepository[FileRecord, uuid.UUID]):
         raise NotImplementedError
 
     @abstractmethod
-    def get_records_by_status(self, status: FileStatus | List[FileStatus]) -> List[FileRecord]:
+    def get_records_by_status(
+        self, status: FileStatus | List[FileStatus]
+    ) -> List[FileRecord]:
         """Retrieves records based on their processing status or list of statuses."""
         raise NotImplementedError
 

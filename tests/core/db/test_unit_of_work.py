@@ -3,9 +3,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from reg_agent.core.db.repositories import DocumentRepository
+
 # Import the class to test
 from reg_agent.core.db.unit_of_work import SqlModelUnitOfWork
-from reg_agent.core.db.repositories import DocumentRepository
 
 
 @pytest.fixture

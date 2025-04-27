@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 # Removed: from sqlalchemy.engine import Engine
 
 # Module to test - Import will happen inside tests
@@ -109,9 +110,9 @@ def mock_dependencies(mocker):
 async def test_run_pipeline_success(mock_dependencies):
     """Test the successful run of the refactored pipeline using the graph."""
     from reg_agent.pipelines.ingestion.run import (
+        DEFAULT_DB_FILE,  # Import default for comparison if needed
         Path,  # Keep Path import for test setup
         run_ingestion_pipeline,
-        DEFAULT_DB_FILE,  # Import default for comparison if needed
     )
 
     mock_p_constructor = mock_dependencies["Path"]

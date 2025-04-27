@@ -1,6 +1,7 @@
-import duckdb
-import os
 import json
+import os
+
+import duckdb
 
 # Path relative to the project root
 db_path = os.path.join("db", "regulations.db")
@@ -39,4 +40,4 @@ else:
         print("\nConnection closed.")
 
     except Exception as e:
-        print(f"Error querying database: {e}") 
+        print(f"Error querying database: {e}")

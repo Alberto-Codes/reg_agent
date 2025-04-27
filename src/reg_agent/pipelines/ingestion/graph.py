@@ -14,6 +14,7 @@ from reg_agent.core.db.connection import create_db_and_tables, get_engine
 # Import the original task functions
 from reg_agent.pipelines.ingestion.tasks.task_1_create_records import run_task_1
 from reg_agent.pipelines.ingestion.tasks.task_2_ocr import run_task_2
+
 # Import the task function and its result type
 from reg_agent.pipelines.ingestion.tasks.task_3_metadata import (
     Task3Result,
@@ -115,7 +116,10 @@ class AggregateResultsNode(pg.BaseNode[PipelineState, None, Dict[str, Any]]):
         t2_res = ctx.state.task_2_results or (0, 0, 0, 0)
         # Default Task 3 result if None
         t3_res_dict = ctx.state.task_3_results or {
-            "found": 0, "success": 0, "errors": 0, "error_details": []
+            "found": 0,
+            "success": 0,
+            "errors": 0,
+            "error_details": [],
         }
 
         results = {
@@ -134,7 +138,7 @@ class AggregateResultsNode(pg.BaseNode[PipelineState, None, Dict[str, Any]]):
                 "found": t3_res_dict["found"],
                 "success": t3_res_dict["success"],
                 "errors": t3_res_dict["errors"],
-                "error_details": t3_res_dict["error_details"], # Include error details
+                "error_details": t3_res_dict["error_details"],  # Include error details
             },
         }
         ctx.state.final_summary = results  # Store final summary in state too
