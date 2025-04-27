@@ -1,4 +1,3 @@
-
 from typer.testing import CliRunner
 
 # Import the main Typer app from your cli module
