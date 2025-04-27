@@ -67,8 +67,8 @@ file_handler.setFormatter(file_formatter)
 root_logger = logging.getLogger()
 # Clear existing handlers if any were added previously (e.g., during reload)
 # Important in some development setups, though might not be strictly necessary here
-# if root_logger.hasHandlers():
-#     root_logger.handlers.clear()
+if root_logger.hasHandlers():
+    root_logger.handlers.clear()
 root_logger.addHandler(console_handler)
 root_logger.addHandler(file_handler)  # Add the file handler
 root_logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
