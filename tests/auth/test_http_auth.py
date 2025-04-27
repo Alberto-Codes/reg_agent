@@ -1,6 +1,7 @@
+from unittest.mock import MagicMock
+
 import pytest
 import requests
-from unittest.mock import MagicMock
 
 from reg_agent.auth.http_auth import DynamicBearerAuth
 from reg_agent.auth.token_manager import ImpersonatedTokenManager
@@ -28,4 +29,4 @@ def test_dynamic_bearer_auth_flow():
 
     # Ensure the generator is exhausted (optional good practice)
     with pytest.raises(StopIteration):
-        next(flow_generator) 
+        next(flow_generator)

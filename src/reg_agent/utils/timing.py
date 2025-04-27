@@ -1,10 +1,12 @@
-import time
 import asyncio
 import functools
-from typing import Callable, Any, Optional
+import time
+from typing import Any, Callable, Optional
+
 import structlog
 
 log = structlog.get_logger()
+
 
 def log_task_duration(task_name_override: Optional[str] = None) -> Callable:
     """
@@ -20,6 +22,7 @@ def log_task_duration(task_name_override: Optional[str] = None) -> Callable:
     Returns:
         The decorator function.
     """
+
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         task_name = task_name_override or func.__name__
 
@@ -62,4 +65,4 @@ def log_task_duration(task_name_override: Optional[str] = None) -> Callable:
             # This ensures the decorator *could* be used for sync functions too.
             return sync_wrapper
 
-    return decorator 
+    return decorator

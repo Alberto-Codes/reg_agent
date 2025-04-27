@@ -1,8 +1,6 @@
-import pytest
-from typer.testing import CliRunner
-from pathlib import Path
-import pathlib  # Import the module itself for original methods
 import logging
+
+from typer.testing import CliRunner
 
 # Import the main Typer app from your cli module
 from reg_agent.cli import app
@@ -36,7 +34,9 @@ def test_ingest_run_success(tmp_path, mocker):
     )
 
     # Primary assertions: exit code is 0 and the mocked function was called
-    assert result.exit_code == 0, f"CLI failed with stdout: {result.stdout}, stderr: {result.stderr}"
+    assert result.exit_code == 0, (
+        f"CLI failed with stdout: {result.stdout}, stderr: {result.stderr}"
+    )
     mock_pipeline_run.assert_called_once_with(
         source_dir=source_dir.resolve(), db_file=db_file.resolve()
     )
@@ -94,8 +94,8 @@ def test_ingest_run_recreate_db_success(tmp_path, mocker):
     source_dir = tmp_path / "recreate_source"
     source_dir.mkdir()
     db_file = tmp_path / "recreate_me.db"
-    db_file.touch() # Create the file so it exists
-    assert db_file.exists() # Ensure it exists before running
+    db_file.touch()  # Create the file so it exists
+    assert db_file.exists()  # Ensure it exists before running
 
     mock_pipeline_run = mocker.patch(
         "reg_agent.commands.ingest_cmd.run_ingestion_pipeline"
@@ -115,8 +115,10 @@ def test_ingest_run_recreate_db_success(tmp_path, mocker):
         ],
     )
 
-    assert result.exit_code == 0, f"CLI failed with stdout: {result.stdout}, stderr: {result.stderr}"
-    assert not db_file.exists() # Check the file was actually deleted
+    assert result.exit_code == 0, (
+        f"CLI failed with stdout: {result.stdout}, stderr: {result.stderr}"
+    )
+    assert not db_file.exists()  # Check the file was actually deleted
     mock_pipeline_run.assert_called_once_with(
         source_dir=source_dir.resolve(), db_file=db_file.resolve()
     )
@@ -172,7 +174,7 @@ def test_ingest_run_pipeline_fails(tmp_path, mocker, caplog):
     # Mock the pipeline to raise an exception
     mock_pipeline_run = mocker.patch(
         "reg_agent.commands.ingest_cmd.run_ingestion_pipeline",
-        side_effect=Exception("Pipeline internal error")
+        side_effect=Exception("Pipeline internal error"),
     )
 
     # Capture log messages at INFO level or higher
@@ -189,10 +191,14 @@ def test_ingest_run_pipeline_fails(tmp_path, mocker, caplog):
         ],
     )
 
-    assert result.exit_code != 0, "CLI should exit with non-zero code on pipeline failure"
+    assert result.exit_code != 0, (
+        "CLI should exit with non-zero code on pipeline failure"
+    )
     mock_pipeline_run.assert_called_once_with(
         source_dir=source_dir.resolve(), db_file=db_file.resolve()
     )
     # Check for the specific log message using caplog
     assert "Ingestion process failed unexpectedly." in caplog.text
-    assert "Pipeline internal error" in caplog.text # Check for the original error in log
+    assert (
+        "Pipeline internal error" in caplog.text
+    )  # Check for the original error in log
