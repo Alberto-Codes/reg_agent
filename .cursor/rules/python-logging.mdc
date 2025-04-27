@@ -3,6 +3,6 @@ description: how to implement logging in python
 globs: 
 alwaysApply: false
 ---
-use @structlog-reference to implement logging and debug
-when testing logging use @structlog-testing
+use https://www.structlog.org/en/stable/logging-best-practices.html to implement logging and debug
+when testing logging use https://www.structlog.org/en/stable/testing.html
 

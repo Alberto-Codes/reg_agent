@@ -3,14 +3,16 @@ description:
 globs: *.py
 alwaysApply: false
 ---
-[use-uv.mdc](mdc:.cursor/rules/use-uv.mdc)
-prioritize use of the '''uv run''' command
-prioritize use of the '''uv add''' commands when adding/installing dependencies
+use https://docs.astral.sh/uv/reference/cli/
+
+prioritize use of the ```uv ru``` command
+prioritize use of the ```uv add``` commands when adding/installing dependencies
 try and avoid uv pip commands in favor of uv primitive commands
 use the uv tool command to run and manage --dev deps
 use the uv to manage the package
 use the uv to manage virtual environments
 use the uv to run scripts
 use the uv to add dependencies
+in order to create requirements.txt use ```uv pip compile pyproject.toml -o requirements.txt```
 
 use the uv to run python
