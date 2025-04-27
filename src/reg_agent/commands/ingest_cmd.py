@@ -3,6 +3,7 @@ from typing import Optional
 
 import structlog
 import typer
+import asyncio
 
 from reg_agent.core.db.connection import DEFAULT_DB_FILE
 from reg_agent.pipelines.ingestion.run import run_ingestion_pipeline
@@ -55,22 +56,12 @@ def run_ingestion(
     #     raise typer.BadParameter("Source path must be a directory.")
 
     if recreate_db and db_file.exists():
-        log.warning("Deleting existing database file", path=str(db_file))
+        log.warning("Recreating database file", path=str(db_file))
         try:
             db_file.unlink()
-        except OSError as e:  # pragma: no cover
-            log.error(
-                "Failed to delete existing database file",
-                path=str(db_file),
-                error=str(e),
-            )
-            # Decide if this is critical - for now, log and continue, the get_engine might fail later
-        except Exception as e:  # pragma: no cover
-            log.exception(
-                "Unexpected error deleting database file",
-                path=str(db_file),
-                error=str(e),
-            )
+        except OSError as e:
+            log.error("Failed to delete existing database file", error=str(e))
+            raise typer.Exit(code=1)
 
     # Ensure parent directory for db exists if a custom path is given
     try:
@@ -84,12 +75,14 @@ def run_ingestion(
         # Consider this a critical failure
         raise typer.Exit(code=1)
 
+    log.info("Starting ingestion pipeline...")
     try:
-        # Run the synchronous pipeline orchestrator function directly
-        run_ingestion_pipeline(source_dir=source_dir, db_file=db_file)
-        log.info("Ingestion command finished.")
+        # Run the async pipeline function using asyncio.run()
+        asyncio.run(run_ingestion_pipeline(source_dir=source_dir, db_file=db_file))
+        log.info("Ingestion pipeline finished.")
     except Exception as e:
-        log.exception("Ingestion process failed unexpectedly.", error=str(e))
+        # Catch potential exceptions during pipeline execution
+        log.exception("Ingestion pipeline failed with an error.", error=str(e))
         raise typer.Exit(code=1)
 
 

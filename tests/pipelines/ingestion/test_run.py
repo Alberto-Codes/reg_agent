@@ -1,26 +1,33 @@
 # tests/pipelines/ingestion/test_run.py
 
 from pathlib import Path
-from unittest.mock import ANY, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from sqlalchemy.engine import Engine
+# Removed: from sqlalchemy.engine import Engine
 
 # Module to test - Import will happen inside tests
-# from reg_agent.pipelines.ingestion.run import run_ingestion_pipeline, DEFAULT_DB_FILE
+# from reg_agent.pipelines.ingestion.run import run_ingestion_pipeline
 
 MOCK_SOURCE_DIR = "/mock/source"
 MOCK_DB_FILE = "/mock/db.sqlite"
+
+# Expected success result from the graph
+MOCK_GRAPH_SUCCESS_RESULT = {
+    "task_1": {"inserted": 10, "skipped": 2, "errors": 0},
+    "task_2": {"found": 8, "success": 7, "skipped": 1, "errors": 0},
+    "task_3": {"found": 5, "success": 4, "errors": 1},
+}
 
 # --- Fixtures ---
 
 
 @pytest.fixture()
 def mock_dependencies(mocker):
-    """Mocks all external dependencies used by run_ingestion_pipeline."""
+    """Mocks external dependencies used by run_ingestion_pipeline."""
     mocks = {}
     # Import necessary items for fixture setup *only*
-    from reg_agent.pipelines.ingestion.run import DEFAULT_DB_FILE
+    from reg_agent.core.db.connection import DEFAULT_DB_FILE
 
     # Mock Path (Patching where used in run.py)
     mock_p = mocker.patch("reg_agent.pipelines.ingestion.run.Path")
@@ -33,12 +40,11 @@ def mock_dependencies(mocker):
     mock_db_file_instance.__str__.return_value = MOCK_DB_FILE
 
     def path_side_effect(path_arg):
-        # Make Path() return specific mocks based on input
         if path_arg == MOCK_SOURCE_DIR:
             return mock_source_instance
         elif path_arg == MOCK_DB_FILE:
             return mock_db_file_instance
-        elif path_arg == DEFAULT_DB_FILE:
+        elif str(path_arg) == str(DEFAULT_DB_FILE):  # Compare strings for default
             return mock_default_db_instance
         else:
             return MagicMock(spec=Path, __str__=lambda: str(path_arg))
@@ -49,37 +55,40 @@ def mock_dependencies(mocker):
     mocks["db_path_instance"] = mock_db_file_instance
     mocks["default_db_path_instance"] = mock_default_db_instance
 
-    # Mock DB setup (Patching where used in run.py)
-    mocks["engine"] = MagicMock(spec=Engine)
-    mocks["get_engine"] = mocker.patch(
-        "reg_agent.pipelines.ingestion.run.get_engine", return_value=mocks["engine"]
-    )
-    mocks["create_db"] = mocker.patch(
-        "reg_agent.pipelines.ingestion.run.create_db_and_tables"
-    )
+    # Mock DB setup (Removed - happens inside graph execution)
+    # mocks["engine"] = MagicMock(spec=Engine)
+    # mocks["get_engine"] = mocker.patch(
+    #     "reg_agent.pipelines.ingestion.run.get_engine", return_value=mocks["engine"]
+    # )
+    # mocks["create_db"] = mocker.patch(
+    #     "reg_agent.pipelines.ingestion.run.create_db_and_tables"
+    # )
 
-    # Mock Tasks (Patching where used in run.py)
-    mocks["run_task_1"] = mocker.patch(
-        "reg_agent.pipelines.ingestion.run.run_task_1", return_value=(10, 2, 0)
-    )
-    mocks["run_task_2"] = mocker.patch(
-        "reg_agent.pipelines.ingestion.run.run_task_2", return_value=(8, 7, 1, 0)
-    )
-    t3_result = (5, 4, 1)
-    mocks["run_task_3_async"] = AsyncMock(return_value=t3_result)
-    mocker.patch(
-        "reg_agent.pipelines.ingestion.run.run_task_3", new=mocks["run_task_3_async"]
-    )
-    # Patch asyncio.run where it's used in run.py
-    mocks["asyncio_run"] = mocker.patch(
-        "reg_agent.pipelines.ingestion.run.asyncio.run", return_value=t3_result
+    # Mock Tasks (Removed - called inside graph execution)
+    # mocks["run_task_1"] = mocker.patch(...)
+    # mocks["run_task_2"] = mocker.patch(...)
+    # mocks["run_task_3_async"] = AsyncMock(...)
+    # mocker.patch("reg_agent.pipelines.ingestion.run.run_task_3", ...)
+    # mocks["asyncio_run"] = mocker.patch(...)
+
+    # Mock the graph execution function (New)
+    mocks["execute_graph"] = mocker.patch(
+        "reg_agent.pipelines.ingestion.run.execute_ingestion_graph",
+        new_callable=AsyncMock,
+        return_value=MOCK_GRAPH_SUCCESS_RESULT,  # Default to success
     )
 
     # Mock log (Patching where used in run.py)
-    mocks["log"] = MagicMock()
+    # mocks["log"] = mocker.patch("reg_agent.pipelines.ingestion.run.log", autospec=True)
+    # Create a MagicMock with specific methods mocked
+    mock_log_instance = MagicMock()
+    mock_log_instance.info = MagicMock()
+    mock_log_instance.error = MagicMock()
+    mock_log_instance.exception = MagicMock()
+    mocks["log"] = mock_log_instance
     mocker.patch("reg_agent.pipelines.ingestion.run.log", mocks["log"])
 
-    # Mock decorator (Patching where used in run.py)
+    # Mock decorator (Keep for now, though timing is less critical with graph)
     def passthrough_decorator(task_name):
         def decorator(func):
             return func
@@ -96,213 +105,180 @@ def mock_dependencies(mocker):
 # --- Test Cases ---
 
 
-def test_run_pipeline_success(mock_dependencies):
-    """Test the successful run of the entire pipeline."""
+@pytest.mark.asyncio  # Add asyncio marker
+async def test_run_pipeline_success(mock_dependencies):
+    """Test the successful run of the refactored pipeline using the graph."""
     from reg_agent.pipelines.ingestion.run import (
-        Path,
+        Path,  # Keep Path import for test setup
         run_ingestion_pipeline,
-    )  # Import Path locally too
+        DEFAULT_DB_FILE,  # Import default for comparison if needed
+    )
 
     mock_p_constructor = mock_dependencies["Path"]
-    mock_get_engine = mock_dependencies["get_engine"]
-    mock_create_db = mock_dependencies["create_db"]
-    mock_engine = mock_dependencies["engine"]
-    mock_t1 = mock_dependencies["run_task_1"]
-    mock_t2 = mock_dependencies["run_task_2"]
-    _mock_t3_async = mock_dependencies["run_task_3_async"]
-    mock_asyncio_run = mock_dependencies["asyncio_run"]
+    mock_execute_graph = mock_dependencies["execute_graph"]
     mock_log = mock_dependencies["log"]
     source_path_instance = mock_dependencies["source_path_instance"]
     db_path_instance = mock_dependencies["db_path_instance"]
 
-    # Use Path objects (which will now hit the mock constructor)
+    # --- Test with specified DB file ---
     source_dir_obj = Path(MOCK_SOURCE_DIR)
     db_file_obj = Path(MOCK_DB_FILE)
 
-    run_ingestion_pipeline(source_dir=source_dir_obj, db_file=db_file_obj)
+    await run_ingestion_pipeline(source_dir=source_dir_obj, db_file=db_file_obj)
 
     # Check setup calls
     mock_p_constructor.assert_any_call(MOCK_SOURCE_DIR)
     mock_p_constructor.assert_any_call(MOCK_DB_FILE)
     source_path_instance.is_dir.assert_called_once()
-    mock_get_engine.assert_called_once_with(db_file=db_path_instance)
-    mock_create_db.assert_called_once_with(mock_engine)
 
-    # Check task calls
-    mock_t1.assert_called_once_with(source_path_instance)
-    mock_t2.assert_called_once_with()
-    mock_asyncio_run.assert_called_once()
+    # Check graph execution call
+    mock_execute_graph.assert_awaited_once_with(
+        source_dir=source_path_instance, db_file=db_path_instance
+    )
 
     # Check logging
     mock_log.info.assert_any_call(
-        "Pipeline run details",
+        "Pipeline run requested",
         source_dir=str(source_path_instance),
         db_file=str(db_path_instance),
     )
+    mock_log.info.assert_any_call("Starting ingestion graph execution...")
     mock_log.info.assert_any_call(
-        "Task 1 (Create Records) summary", inserted=10, skipped=2, errors=0
+        "Ingestion graph execution complete.", results=MOCK_GRAPH_SUCCESS_RESULT
+    )
+    # Use ** unpacking for the summary log check
+    mock_log.info.assert_any_call(
+        "Pipeline task summaries reported by graph:", **MOCK_GRAPH_SUCCESS_RESULT
+    )
+    mock_log.error.assert_not_called()
+    mock_log.exception.assert_not_called()
+
+    # --- Reset mocks for next part of test ---
+    source_path_instance.is_dir.reset_mock()
+    mock_execute_graph.reset_mock()
+    mock_log.reset_mock()
+
+    # --- Test with default DB file ---
+    await run_ingestion_pipeline(source_dir=source_dir_obj)
+
+    # Check setup calls
+    source_path_instance.is_dir.assert_called_once()
+
+    # Check graph execution call uses the ACTUAL DEFAULT_DB_FILE Path object
+    mock_execute_graph.assert_awaited_once_with(
+        source_dir=source_path_instance,
+        db_file=DEFAULT_DB_FILE,  # Use the imported default Path object directly
+    )
+
+    # Check logging uses default path string
+    mock_log.info.assert_any_call(
+        "Pipeline run requested",
+        source_dir=str(source_path_instance),
+        db_file=str(DEFAULT_DB_FILE),
+    )
+    # Other log calls should be similar
+    mock_log.info.assert_any_call("Starting ingestion graph execution...")
+    mock_log.info.assert_any_call(
+        "Ingestion graph execution complete.", results=MOCK_GRAPH_SUCCESS_RESULT
     )
     mock_log.info.assert_any_call(
-        "Task 2 (OCR) summary", found=8, success=7, skipped=1, errors=0
-    )
-    mock_log.info.assert_any_call(
-        "Task 3 (Metadata) summary", found=5, success=4, errors=1
-    )
-    mock_log.info.assert_any_call(
-        "Pipeline task summaries complete.",
-        task1_results=(10, 2, 0),
-        task2_results=(8, 7, 1, 0),
-        task3_results=(5, 4, 1),
+        "Pipeline task summaries reported by graph:", **MOCK_GRAPH_SUCCESS_RESULT
     )
     mock_log.error.assert_not_called()
     mock_log.exception.assert_not_called()
 
 
-def test_run_pipeline_invalid_source_dir(mock_dependencies):
+@pytest.mark.asyncio  # Add asyncio marker
+async def test_run_pipeline_invalid_source_dir(mock_dependencies):
     """Test pipeline halts if source directory is invalid."""
+    # Import locally to avoid polluting global namespace if test is skipped
     from reg_agent.pipelines.ingestion.run import Path, run_ingestion_pipeline
 
-    mock_get_engine = mock_dependencies["get_engine"]
-    mock_create_db = mock_dependencies["create_db"]
-    mock_t1 = mock_dependencies["run_task_1"]
+    mock_execute_graph = mock_dependencies["execute_graph"]
     mock_log = mock_dependencies["log"]
     source_path_instance = mock_dependencies["source_path_instance"]
 
     source_path_instance.is_dir.return_value = False
 
-    run_ingestion_pipeline(source_dir=Path(MOCK_SOURCE_DIR))
+    await run_ingestion_pipeline(source_dir=Path(MOCK_SOURCE_DIR))
 
     source_path_instance.is_dir.assert_called_once()
     mock_log.error.assert_called_once_with(
         "Source directory does not exist or is not a directory. Halting pipeline.",
         path=str(source_path_instance),
     )
-    mock_get_engine.assert_not_called()
-    mock_create_db.assert_not_called()
-    mock_t1.assert_not_called()
+    # Ensure graph execution was NOT called
+    mock_execute_graph.assert_not_awaited()
 
 
-def test_run_pipeline_get_engine_fails(mock_dependencies):
-    """Test pipeline halts if get_engine fails."""
+# --- Remove DB failure tests --- #
+# def test_run_pipeline_get_engine_fails(mock_dependencies):
+#     ...
+# def test_run_pipeline_create_db_fails(mock_dependencies):
+#     ...
+
+# --- Remove old task failure tests --- #
+# def test_run_pipeline_task1_fails(mock_dependencies):
+#     ...
+# def test_run_pipeline_task2_fails(mock_dependencies):
+#     ...
+# def test_run_pipeline_task3_fails(mock_dependencies):
+#     ...
+
+# --- Add new tests for graph execution outcomes --- #
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_graph_execution_fails(mock_dependencies):
+    """Test pipeline handles exception during graph execution."""
     from reg_agent.pipelines.ingestion.run import Path, run_ingestion_pipeline
 
-    mock_get_engine = mock_dependencies["get_engine"]
-    mock_create_db = mock_dependencies["create_db"]
-    mock_t1 = mock_dependencies["run_task_1"]
+    mock_execute_graph = mock_dependencies["execute_graph"]
     mock_log = mock_dependencies["log"]
     source_path_instance = mock_dependencies["source_path_instance"]
 
-    mock_get_engine.side_effect = ValueError("DB connection failed")
+    # Configure the mock graph executor to raise an error
+    test_exception = ValueError("Graph exploded")
+    mock_execute_graph.side_effect = test_exception
 
-    # Test with default db_file path
-    run_ingestion_pipeline(source_dir=Path(MOCK_SOURCE_DIR))
+    await run_ingestion_pipeline(source_dir=Path(MOCK_SOURCE_DIR))
 
     source_path_instance.is_dir.assert_called_once()
-    mock_get_engine.assert_called_once_with(db_file=ANY)
+    mock_execute_graph.assert_awaited_once()  # Ensure it was called
+    # Check that the orchestrator caught the exception and logged it
     mock_log.exception.assert_called_once_with(
-        "Failed to initialize database engine or tables. Halting pipeline.",
-        error="DB connection failed",
+        "An unexpected error occurred during pipeline orchestration.",
+        error=str(test_exception),
     )
-    mock_create_db.assert_not_called()
-    mock_t1.assert_not_called()
+    mock_log.error.assert_not_called()  # Should be exception, not error
 
 
-def test_run_pipeline_create_db_fails(mock_dependencies):
-    """Test pipeline halts if create_db_and_tables fails."""
+@pytest.mark.asyncio
+async def test_run_pipeline_graph_reports_error(mock_dependencies):
+    """Test pipeline handles error dictionary returned by graph execution."""
     from reg_agent.pipelines.ingestion.run import Path, run_ingestion_pipeline
 
-    mock_get_engine = mock_dependencies["get_engine"]
-    mock_create_db = mock_dependencies["create_db"]
-    mock_engine = mock_dependencies["engine"]
-    mock_t1 = mock_dependencies["run_task_1"]
+    mock_execute_graph = mock_dependencies["execute_graph"]
     mock_log = mock_dependencies["log"]
     source_path_instance = mock_dependencies["source_path_instance"]
 
-    mock_create_db.side_effect = RuntimeError("Table creation error")
+    # Configure the mock graph executor to return an error dictionary
+    error_result = {"error": "Database setup failed", "details": "Connection refused"}
+    mock_execute_graph.return_value = error_result
 
-    run_ingestion_pipeline(source_dir=Path(MOCK_SOURCE_DIR))
+    await run_ingestion_pipeline(source_dir=Path(MOCK_SOURCE_DIR))
 
     source_path_instance.is_dir.assert_called_once()
-    mock_get_engine.assert_called_once_with(db_file=ANY)
-    mock_create_db.assert_called_once_with(mock_engine)
-    mock_log.exception.assert_called_once_with(
-        "Failed to initialize database engine or tables. Halting pipeline.",
-        error="Table creation error",
+    mock_execute_graph.assert_awaited_once()
+    # Check that the orchestrator logged the error reported by the graph
+    mock_log.error.assert_called_once_with(
+        "Pipeline execution failed within the graph.",
+        error=error_result["error"],
+        details=error_result["details"],
     )
-    mock_t1.assert_not_called()
-
-
-def test_run_pipeline_task1_fails(mock_dependencies):
-    """Test pipeline handles exception during Task 1."""
-    from reg_agent.pipelines.ingestion.run import Path, run_ingestion_pipeline
-
-    mock_engine = mock_dependencies["engine"]
-    mock_t1 = mock_dependencies["run_task_1"]
-    mock_t2 = mock_dependencies["run_task_2"]
-    mock_asyncio_run = mock_dependencies["asyncio_run"]
-    mock_log = mock_dependencies["log"]
-    source_path_instance = mock_dependencies["source_path_instance"]
-
-    mock_t1.side_effect = IOError("Cannot read file")
-
-    run_ingestion_pipeline(source_dir=Path(MOCK_SOURCE_DIR))
-
-    source_path_instance.is_dir.assert_called_once()
-    mock_t1.assert_called_once_with(source_path_instance)
-    mock_log.exception.assert_called_once_with(
-        "An unexpected error occurred during pipeline execution.",
-        error="Cannot read file",
-    )
-    mock_t2.assert_not_called()
-    mock_asyncio_run.assert_not_called()
-
-
-def test_run_pipeline_task2_fails(mock_dependencies):
-    """Test pipeline handles exception during Task 2."""
-    from reg_agent.pipelines.ingestion.run import Path, run_ingestion_pipeline
-
-    mock_engine = mock_dependencies["engine"]
-    mock_t1 = mock_dependencies["run_task_1"]
-    mock_t2 = mock_dependencies["run_task_2"]
-    mock_asyncio_run = mock_dependencies["asyncio_run"]
-    mock_log = mock_dependencies["log"]
-    source_path_instance = mock_dependencies["source_path_instance"]
-
-    mock_t2.side_effect = ValueError("OCR Engine unavailable")
-
-    run_ingestion_pipeline(source_dir=Path(MOCK_SOURCE_DIR))
-
-    source_path_instance.is_dir.assert_called_once()
-    mock_t1.assert_called_once_with(source_path_instance)
-    mock_t2.assert_called_once_with()
-    mock_asyncio_run.assert_not_called()
-    mock_log.exception.assert_called_once_with(
-        "An unexpected error occurred during pipeline execution.",
-        error="OCR Engine unavailable",
-    )
-
-
-def test_run_pipeline_task3_fails(mock_dependencies):
-    """Test pipeline handles exception during Task 3 (asyncio.run)."""
-    from reg_agent.pipelines.ingestion.run import Path, run_ingestion_pipeline
-
-    mock_engine = mock_dependencies["engine"]
-    mock_t1 = mock_dependencies["run_task_1"]
-    mock_t2 = mock_dependencies["run_task_2"]
-    _mock_t3_async = mock_dependencies["run_task_3_async"]
-    mock_asyncio_run = mock_dependencies["asyncio_run"]
-    mock_log = mock_dependencies["log"]
-    source_path_instance = mock_dependencies["source_path_instance"]
-
-    mock_asyncio_run.side_effect = ConnectionRefusedError("LLM endpoint down")
-
-    run_ingestion_pipeline(source_dir=Path(MOCK_SOURCE_DIR))
-
-    source_path_instance.is_dir.assert_called_once()
-    mock_t1.assert_called_once_with(source_path_instance)
-    mock_t2.assert_called_once_with()
-    mock_asyncio_run.assert_called_once()
-    mock_log.exception.assert_called_once_with(
-        "An unexpected error occurred during pipeline execution.",
-        error="LLM endpoint down",
+    mock_log.exception.assert_not_called()
+    # Ensure the final summary log was not called
+    assert not any(
+        call.args[0] == "Pipeline task summaries reported by graph:"
+        for call in mock_log.info.call_args_list
     )

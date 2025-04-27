@@ -31,7 +31,9 @@ async def run_task_3():  # Removed engine parameter
     records_found = 0
     success_count = 0
     error_count = 0
-    metadata_service: Optional[MetadataExtractionService] = None # Initialize outside try
+    metadata_service: Optional[MetadataExtractionService] = (
+        None  # Initialize outside try
+    )
 
     try:
         # --- Initialize Service --- #
@@ -44,7 +46,7 @@ async def run_task_3():  # Removed engine parameter
                 error=str(service_init_err),
             )
             # Cannot proceed without the service
-            error_count = 1 # Set error count for service init failure
+            error_count = 1  # Set error count for service init failure
             return 0, 0, error_count
 
         # --- Process Records using UoW --- #
@@ -56,15 +58,19 @@ async def run_task_3():  # Removed engine parameter
                     FileStatus.PENDING_METADATA,
                     FileStatus.FAILED_METADATA,
                 ]
-                log.info("Querying for records with statuses", statuses=statuses_to_process)
+                log.info(
+                    "Querying for records with statuses", statuses=statuses_to_process
+                )
                 records_to_process = uow.documents.get_records_by_status(
                     statuses_to_process  # Pass list as positional argument
                 )
                 records_found = len(records_to_process)
-                log.info(f"Task 3: Found {records_found} records for metadata extraction.")
+                log.info(
+                    f"Task 3: Found {records_found} records for metadata extraction."
+                )
 
                 if not records_to_process:
-                    pass # Let summary log outside the loop handle this
+                    pass  # Let summary log outside the loop handle this
                 else:
                     for record in records_to_process:
                         await asyncio.sleep(2)  # Keep the delay
@@ -75,7 +81,9 @@ async def run_task_3():  # Removed engine parameter
                                 record_id=record.id,
                             )
                             record.status = FileStatus.FAILED_UNKNOWN
-                            log.info("Staging status to FAILED_UNKNOWN", record_id=record.id)
+                            log.info(
+                                "Staging status to FAILED_UNKNOWN", record_id=record.id
+                            )
                             error_count += 1
                             continue
 
@@ -83,10 +91,14 @@ async def run_task_3():  # Removed engine parameter
                         try:
                             # Check service exists before calling (should always here)
                             if not metadata_service:
-                                raise RuntimeError("Metadata service not initialized unexpectedly")
+                                raise RuntimeError(
+                                    "Metadata service not initialized unexpectedly"
+                                )
 
-                            extracted_meta_model = await metadata_service.extract_metadata(
-                                record.extracted_text
+                            extracted_meta_model = (
+                                await metadata_service.extract_metadata(
+                                    record.extracted_text
+                                )
                             )
 
                             # --- Update record based on result; UoW tracks changes --- #
@@ -94,7 +106,8 @@ async def run_task_3():  # Removed engine parameter
                                 record.status = FileStatus.COMPLETED
                                 record.meta_data = extracted_meta_model.model_dump()
                                 log.debug(
-                                    "Staging COMPLETED status and metadata", record_id=record.id
+                                    "Staging COMPLETED status and metadata",
+                                    record_id=record.id,
                                 )
                                 success_count += 1
                             else:
@@ -127,7 +140,7 @@ async def run_task_3():  # Removed engine parameter
 
     finally:
         # --- Ensure Service Cleanup --- #
-        if metadata_service and hasattr(metadata_service, 'close'):
+        if metadata_service and hasattr(metadata_service, "close"):
             try:
                 log.info("Attempting to close MetadataExtractionService client.")
                 await metadata_service.close()
@@ -135,7 +148,7 @@ async def run_task_3():  # Removed engine parameter
             except Exception as close_err:
                 log.warning(
                     "Error closing MetadataExtractionService client",
-                    error=str(close_err)
+                    error=str(close_err),
                 )
 
     # --- Log Final Summary --- #

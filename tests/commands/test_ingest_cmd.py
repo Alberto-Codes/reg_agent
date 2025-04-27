@@ -198,7 +198,7 @@ def test_ingest_run_pipeline_fails(tmp_path, mocker, caplog):
         source_dir=source_dir.resolve(), db_file=db_file.resolve()
     )
     # Check for the specific log message using caplog
-    assert "Ingestion process failed unexpectedly." in caplog.text
+    assert "Ingestion pipeline failed with an error." in caplog.text
     assert (
         "Pipeline internal error" in caplog.text
     )  # Check for the original error in log

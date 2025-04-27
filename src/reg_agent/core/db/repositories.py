@@ -157,7 +157,7 @@ class DocumentRepository(AbstractDocumentRepository):
                     # Fallback to string extraction might be desired in some cases,
                     # or raise ValueError(f"Unsupported filter value type: {type(value)}")
                     extraction_function = "json_extract_string"
-                    value = str(value) # Coerce if falling back to string
+                    value = str(value)  # Coerce if falling back to string
 
                 # Use DuckDB's json_extract/json_extract_string via text()
                 condition = text(
@@ -247,7 +247,9 @@ class DocumentRepository(AbstractDocumentRepository):
         if isinstance(status, list):
             status_values = [s.value for s in status]
             log.debug("Fetching records by list of statuses", statuses=status_values)
-            statement = select(FileRecord).where(FileRecord.status.in_(status_values))  # Use ColumnOperators.in_
+            statement = select(FileRecord).where(
+                FileRecord.status.in_(status_values)
+            )  # Use ColumnOperators.in_
         else:
             log.debug("Fetching records by status", status=status.value)
             statement = select(FileRecord).where(FileRecord.status == status)
