@@ -41,6 +41,7 @@ dev = [
     "pytest-mock>=3.14.0",
     "ruff>=0.11.7",
     "mypy>=1.0.0",
+    "python-dotenv>=1.1.0",
 ]
 
 # Coverage configuration
