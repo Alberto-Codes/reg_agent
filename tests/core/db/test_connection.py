@@ -261,9 +261,7 @@ def test_get_session_engine_none(mocker, caplog):
         ValueError, match="Database engine is not initialized. Call get_engine first."
     ):
         # Use underscore for unused context variable
-        with db_connection.get_session(
-            engine=None
-        ) as _:  # Trigger internal get_engine
+        with db_connection.get_session(engine=None) as _:  # Trigger internal get_engine
             pass  # pragma: no cover - code inside context won't run
 
     mock_get_engine.assert_called_once()

@@ -6,14 +6,14 @@ import logging
 import google.auth
 import google.auth.transport.requests
 from pydantic import BaseModel, Field
-from typing import Type, Optional, cast
-import httpx
+from typing import Type, Optional
 
 # For __main__ testing - load environment variables if available
 from dotenv import load_dotenv
 
 # --- Switch imports for OpenAI compatibility ---
 from pydantic_ai.agent import Agent
+
 # Use OpenAIModel and OpenAIProvider now
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -21,6 +21,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 # --- Configuration Loading ---
 load_dotenv()
 log = structlog.get_logger()
+
 
 def _get_required_env_var(var_name: str) -> str:
     """Gets an environment variable, raising an error if it's not set."""
@@ -30,23 +31,26 @@ def _get_required_env_var(var_name: str) -> str:
         raise ValueError(f"{var_name} must be set via environment variable.")
     return value
 
+
 def _get_vertex_model_name() -> str:
     """Gets the Vertex AI model name, ensuring the 'google/' prefix."""
-    raw_name = os.getenv("VERTEX_MODEL_NAME", 'google/gemini-1.5-flash-latest')
-    if "/" not in raw_name: # Simpler check if prefix is missing
+    raw_name = os.getenv("VERTEX_MODEL_NAME", "google/gemini-1.5-flash-latest")
+    if "/" not in raw_name:  # Simpler check if prefix is missing
         log.warning(
             "VERTEX_MODEL_NAME potentially missing publisher prefix. Assuming 'google/'.",
-            raw_name=raw_name
+            raw_name=raw_name,
         )
         return f"google/{raw_name}"
     # Consider adding check if prefix is other than 'google/' if needed
     return raw_name
+
 
 MODEL_NAME = _get_vertex_model_name()
 BASE_URL = _get_required_env_var("VERTEX_OPENAI_ENDPOINT_URL")
 
 # API Key is no longer used directly for authentication
 # API_KEY = os.getenv("VERTEX_API_KEY", "None") # Default to string "None" as placeholder
+
 
 # --- Response Model ---
 class BaseMetadata(BaseModel):
@@ -73,7 +77,7 @@ class MetadataExtractionService:
             "Initializing MetadataExtractionService for OpenAI-compatible endpoint",
             model=MODEL_NAME,
             base_url=BASE_URL,
-            auth_method="ADC", # Indicate ADC is being used
+            auth_method="ADC",  # Indicate ADC is being used
             output_type=self.output_type.__name__,
         )
         try:
@@ -97,8 +101,8 @@ class MetadataExtractionService:
 
             # Instantiate OpenAIProvider passing ADC token as api_key
             provider = OpenAIProvider(
-                api_key=credentials.token, # Pass ADC token as the API key
-                base_url=BASE_URL, # Keep base_url explicit
+                api_key=credentials.token,  # Pass ADC token as the API key
+                base_url=BASE_URL,  # Keep base_url explicit
                 # http_client=http_client, # Remove client
             )
             # Use OpenAIModel with the specific Gemini model name and the provider
@@ -113,9 +117,11 @@ class MetadataExtractionService:
             log.error(
                 "Failed to find Application Default Credentials (ADC). "
                 "Ensure you are authenticated (e.g., `gcloud auth application-default login`).",
-                exc_info=True
+                exc_info=True,
             )
-            raise RuntimeError("MetadataExtractionService initialization failed due to missing ADC.") from cred_err
+            raise RuntimeError(
+                "MetadataExtractionService initialization failed due to missing ADC."
+            ) from cred_err
         except Exception as e:
             log.error("Failed to initialize pydantic-ai agent", exc_info=True)
             raise RuntimeError("MetadataExtractionService initialization failed") from e
@@ -189,10 +195,12 @@ if __name__ == "__main__":
             structlog.stdlib.add_logger_name,
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.CallsiteParameterAdder(
-                {structlog.processors.CallsiteParameter.PATHNAME,
-                 structlog.processors.CallsiteParameter.LINENO}
+                {
+                    structlog.processors.CallsiteParameter.PATHNAME,
+                    structlog.processors.CallsiteParameter.LINENO,
+                }
             ),
-        ]
+        ],
     )
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)

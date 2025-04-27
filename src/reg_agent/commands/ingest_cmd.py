@@ -58,21 +58,26 @@ def run_ingestion(
         try:
             resolved_db_path = db_path.resolve()
             if resolved_db_path.exists() and resolved_db_path.is_file():
-                log.warning("Deleting existing database file", path=str(resolved_db_path))
+                log.warning(
+                    "Deleting existing database file", path=str(resolved_db_path)
+                )
                 resolved_db_path.unlink()
             else:
-                log.info("Database file does not exist, skipping deletion.", path=str(resolved_db_path))
+                log.info(
+                    "Database file does not exist, skipping deletion.",
+                    path=str(resolved_db_path),
+                )
         except OSError as e:
             log.exception(
                 "Failed to delete existing database file. Proceeding without deletion.",
                 path=str(resolved_db_path),
-                error=str(e)
+                error=str(e),
             )
         except Exception as e:
             log.exception(
                 "An unexpected error occurred during database deletion. Proceeding without deletion.",
                 path=str(resolved_db_path),
-                error=str(e)
+                error=str(e),
             )
 
     try:
