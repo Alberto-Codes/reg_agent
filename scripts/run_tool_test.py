@@ -1,4 +1,4 @@
-# scripts/test_duckdb_tool.py
+# scripts/run_tool_test.py # Renamed from test_duckdb_tool.py
 
 import asyncio
 import sys
