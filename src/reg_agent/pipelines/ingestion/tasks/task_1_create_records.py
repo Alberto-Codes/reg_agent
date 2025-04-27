@@ -4,23 +4,24 @@ import datetime
 from pathlib import Path
 
 import structlog
-from sqlalchemy.engine import Engine
 
-from reg_agent.core.db.connection import get_session
+# from sqlalchemy.engine import Engine # No longer needed as arg
+# from reg_agent.core.db.connection import get_session # Replaced by UoW
 from reg_agent.core.db.models import FileRecord, FileStatus
-from reg_agent.core.db.repositories import FileRepository
+
+# from reg_agent.core.db.repositories import FileRepository # Replaced by UoW
+from reg_agent.core.db.unit_of_work import SqlModelUnitOfWork  # Import UoW
 from reg_agent.utils.timing import log_task_duration
 
 log = structlog.get_logger()
 
 
 @log_task_duration("task_1_create_records")
-def run_task_1(engine: Engine, source_dir: Path):
+def run_task_1(source_dir: Path):  # Removed engine parameter
     """Scans the source directory and creates initial FileRecord entries
-    in the database for new files found (Synchronous Version).
+    in the database for new files found using Unit of Work.
 
     Args:
-        engine: The SQLAlchemy SyncEngine for database interaction.
         source_dir: The directory containing files to ingest.
 
     Returns:
@@ -31,30 +32,26 @@ def run_task_1(engine: Engine, source_dir: Path):
     error_count = 0
 
     try:
-        # Use the synchronous session manager
-        with get_session(engine=engine) as session:
-            file_repo = FileRepository(session)
-            # Pathlib iteration is sync
+        # Use the Unit of Work context manager
+        with SqlModelUnitOfWork() as uow:
+            # Access the repository via uow.documents
             for file_path in source_dir.rglob("*"):
-                # Move try block to encompass file check and processing
                 try:
                     if file_path.is_file():
                         source_path_str = str(file_path.resolve())
 
-                        # Call sync existence check directly
-                        if file_repo.exists_by_source_path(source_path_str):
+                        # Use repository from UoW
+                        if uow.documents.exists_by_source_path(source_path_str):
                             skipped_count += 1
                             log.debug("Skipped existing file", path=source_path_str)
-                            continue  # Skip to next file path
+                            continue
 
-                        # File I/O and stat remain sync
                         file_stat = file_path.stat()
                         filename = file_path.name
                         size_bytes = file_stat.st_size
                         last_modified_ts = datetime.datetime.fromtimestamp(
                             file_stat.st_mtime, tz=datetime.timezone.utc
                         )
-                        # Reading blob can also cause OSError
                         with open(file_path, "rb") as f:
                             blob_content = f.read()
 
@@ -69,17 +66,14 @@ def run_task_1(engine: Engine, source_dir: Path):
                             status=FileStatus.PENDING_PROCESS,
                         )
 
-                        # Call sync add directly
-                        session.add(new_record)
+                        # Use repository add method from UoW
+                        uow.documents.add(new_record)
                         inserted_count += 1
                         log.debug(
-                            "Staged new FileRecord",
+                            "Staged new FileRecord (pending UoW commit)",
                             path=source_path_str,
                             record_id=new_record.id,
                         )
-
-                    # If it's not a file (e.g., a directory), just continue the loop
-                    # else: pass # Implicitly continue
 
                 except OSError as e:
                     error_count += 1
@@ -95,18 +89,13 @@ def run_task_1(engine: Engine, source_dir: Path):
                         path=str(file_path),
                         error=str(e),
                     )
-                # Continue to the next file_path even if an error occurred
-
-            # Commit happens automatically via sync context manager exit
+            # Commit happens automatically on successful exit of the 'with uow:' block
 
     except Exception as e:
-        # This catches errors initializing the session or repository
-        error_count += 1  # Or should this be handled differently?
-        log.exception(
-            "Error during Task 1 session setup or main loop exit", error=str(e)
-        )
+        # This catches errors initializing the UoW or during its exit
+        error_count += 1
+        log.exception("Error during Task 1 Unit of Work execution", error=str(e))
 
-    # Log final summary counts
     log.info(
         "Task 1 Summary",
         inserted=inserted_count,

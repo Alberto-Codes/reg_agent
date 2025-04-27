@@ -4,11 +4,13 @@ import asyncio
 from typing import Optional
 
 import structlog
-from sqlalchemy.engine import Engine
 
-from reg_agent.core.db.connection import get_session
-from reg_agent.core.db.models import FileRecord, FileStatus
-from reg_agent.core.db.repositories import FileRepository
+# from sqlalchemy.engine import Engine # Removed
+# from reg_agent.core.db.connection import get_session # Replaced by UoW
+from reg_agent.core.db.models import FileStatus
+
+# from reg_agent.core.db.repositories import FileRepository # Replaced by UoW
+from reg_agent.core.db.unit_of_work import SqlModelUnitOfWork  # Import UoW
 from reg_agent.services.metadata_service import MetadataExtractionService
 from reg_agent.utils.timing import log_task_duration
 
@@ -16,14 +18,12 @@ log = structlog.get_logger()
 
 
 @log_task_duration("task_3_metadata")
-async def run_task_3(engine: Engine):
-    """Extracts metadata for records with status PENDING_METADATA.
+async def run_task_3():  # Removed engine parameter
+    """Extracts metadata for records with status PENDING_METADATA using UoW.
 
-    Initializes MetadataExtractionService internally per record.
-    Uses synchronous database operations within the async function.
-
-    Args:
-        engine: The SQLAlchemy synchronous Engine for database interaction.
+    Initializes MetadataExtractionService once and processes records within a single UoW.
+    Uses synchronous database operations tracked by UoW within the async function.
+    Ensures MetadataExtractionService is closed if initialized.
 
     Returns:
         Tuple[int, int, int]: found_count, success_count, error_count
@@ -31,191 +31,118 @@ async def run_task_3(engine: Engine):
     records_found = 0
     success_count = 0
     error_count = 0
-    records_processed_ids = set()
+    metadata_service: Optional[MetadataExtractionService] = None # Initialize outside try
 
-    # Initial fetch needs its own session block
-    records_data = []  # Initialize records_data
     try:
-        with get_session(engine=engine) as session:
-            file_repo = FileRepository(session)
-            records_to_process = file_repo.get_records_by_status(
-                FileStatus.PENDING_METADATA
-            )
-            records_found = len(records_to_process)
-            records_data = [
-                (r.id, r.source_path, r.extracted_text) for r in records_to_process
-            ]
-        log.info(f"Task 3: Found {records_found} records for metadata extraction.")
-    except Exception as e:
-        log.exception("Error fetching records for Task 3", error=str(e))
-        return 0, 0, 0
-
-    if not records_data:
-        log.info(
-            "Task 3 Summary",
-            found=records_found,
-            success=success_count,
-            errors=error_count,
-        )
-        return records_found, success_count, error_count
-
-    for record_id, source_path, extracted_text in records_data:
-        if record_id in records_processed_ids:
-            continue
-
-        await asyncio.sleep(2)  # Delay between API calls
-
-        if not extracted_text:
-            log.warning(
-                "Skipping metadata: Record has no extracted text",
-                record_id=record_id,
-            )
-            try:
-                with get_session(engine=engine) as update_session:
-                    # Fetch the specific record to update
-                    record = update_session.get(FileRecord, record_id)
-                    if record:
-                        record.status = FileStatus.FAILED_UNKNOWN
-                        update_session.add(record)
-                        # Commit happens on session exit
-                        log.info(
-                            "Updating status to FAILED_UNKNOWN", record_id=record_id
-                        )
-                    else:
-                        log.error(
-                            "Could not find record to update status to FAILED_UNKNOWN",
-                            record_id=record_id,
-                        )
-            except Exception as commit_err:
-                log.error(
-                    "Failed session/commit for FAILED_UNKNOWN status",
-                    record_id=record_id,
-                    error=str(commit_err),
-                )
-            error_count += 1
-            records_processed_ids.add(record_id)
-            continue
-
-        # --- Service Init & API Call per Record --- #
-        metadata_service: Optional[MetadataExtractionService] = None
+        # --- Initialize Service --- #
         try:
-            # Initialize service inside the loop
             metadata_service = MetadataExtractionService()
-            log.info(
-                "MetadataExtractionService initialized for record", record_id=record_id
+            log.info("MetadataExtractionService initialized for Task 3.")
+        except Exception as service_init_err:
+            log.exception(
+                "Failed to initialize MetadataExtractionService",
+                error=str(service_init_err),
             )
+            # Cannot proceed without the service
+            error_count = 1 # Set error count for service init failure
+            return 0, 0, error_count
 
-            extracted_meta_model = await metadata_service.extract_metadata(
-                extracted_text
-            )
-
-            # --- Sync DB Update --- #
-            update_status = None
-            update_metadata = None
-            commit_log_msg = ""
-
-            if extracted_meta_model:
-                update_status = FileStatus.COMPLETED
-                update_metadata = extracted_meta_model.model_dump()
-                commit_log_msg = "Committing COMPLETED status and metadata"
-                success_count += 1
-            else:
-                update_status = FileStatus.FAILED_METADATA
-                commit_log_msg = "Committing FAILED_METADATA status (API returned None)"
-                error_count += 1
-
-            try:
-                with get_session(engine=engine) as update_session:
-                    record = update_session.get(FileRecord, record_id)
-                    if record:
-                        log.debug(commit_log_msg, record_id=record_id)
-                        record.status = update_status
-                        if update_metadata:
-                            record.meta_data = update_metadata
-                        update_session.add(record)
-                        # Commit happens on session exit
-                    else:
-                        log.error(
-                            "Could not find record to update metadata status",
-                            record_id=record_id,
-                            target_status=update_status,
-                        )
-                        # Adjust counts if record vanished?
-                        if update_status == FileStatus.COMPLETED:
-                            success_count -= 1
-                        else:
-                            error_count -= 1  # Decrement if we counted it
-                        error_count += 1  # Add error for missing record
-                        continue  # Skip to next record
-
-            except Exception as commit_err:
-                log.error(
-                    "Failed session/commit updating metadata status",
-                    record_id=record_id,
-                    error=str(commit_err),
+        # --- Process Records using UoW --- #
+        try:
+            # Wrap entire fetch and process logic in a single UoW
+            with SqlModelUnitOfWork() as uow:
+                # Fetch records inside the UoW - Include FAILED_METADATA for retry
+                statuses_to_process = [
+                    FileStatus.PENDING_METADATA,
+                    FileStatus.FAILED_METADATA,
+                ]
+                log.info("Querying for records with statuses", statuses=statuses_to_process)
+                records_to_process = uow.documents.get_records_by_status(
+                    statuses_to_process  # Pass list as positional argument
                 )
-                # Adjust counts as commit failed
-                if update_status == FileStatus.COMPLETED:
-                    success_count -= 1
+                records_found = len(records_to_process)
+                log.info(f"Task 3: Found {records_found} records for metadata extraction.")
+
+                if not records_to_process:
+                    pass # Let summary log outside the loop handle this
                 else:
-                    error_count -= 1  # Decrement if we counted it
-                error_count += 1  # Add error for the commit failure
-            # --- End Sync DB Update --- #
+                    for record in records_to_process:
+                        await asyncio.sleep(2)  # Keep the delay
+
+                        if not record.extracted_text:
+                            log.warning(
+                                "Skipping metadata: Record has no extracted text",
+                                record_id=record.id,
+                            )
+                            record.status = FileStatus.FAILED_UNKNOWN
+                            log.info("Staging status to FAILED_UNKNOWN", record_id=record.id)
+                            error_count += 1
+                            continue
+
+                        # --- Call Metadata Service --- #
+                        try:
+                            # Check service exists before calling (should always here)
+                            if not metadata_service:
+                                raise RuntimeError("Metadata service not initialized unexpectedly")
+
+                            extracted_meta_model = await metadata_service.extract_metadata(
+                                record.extracted_text
+                            )
+
+                            # --- Update record based on result; UoW tracks changes --- #
+                            if extracted_meta_model:
+                                record.status = FileStatus.COMPLETED
+                                record.meta_data = extracted_meta_model.model_dump()
+                                log.debug(
+                                    "Staging COMPLETED status and metadata", record_id=record.id
+                                )
+                                success_count += 1
+                            else:
+                                record.status = FileStatus.FAILED_METADATA
+                                log.debug(
+                                    "Staging FAILED_METADATA status (API returned None)",
+                                    record_id=record.id,
+                                )
+                                error_count += 1
+
+                        except Exception as e:
+                            log.warning(
+                                "Metadata extraction API/Service error for record",
+                                record_id=record.id,
+                                path=record.source_path,
+                                error=str(e),
+                                exc_info=False,
+                            )
+                            record.status = FileStatus.FAILED_METADATA
+                            log.debug(
+                                "Staging FAILED_METADATA status after API error",
+                                record_id=record.id,
+                            )
+                            error_count += 1
 
         except Exception as e:
-            # Handle API/Service errors
-            log.warning(
-                "Metadata extraction API/Service error for record",
-                record_id=record_id,
-                path=source_path,
-                error=str(e),
-                exc_info=False,
-            )
-            # --- Sync DB Update for API Error --- #
-            try:
-                with get_session(engine=engine) as update_session:
-                    record = update_session.get(FileRecord, record_id)
-                    if record:
-                        log.debug(
-                            "Committing FAILED_METADATA status after API error",
-                            record_id=record_id,
-                        )
-                        record.status = FileStatus.FAILED_METADATA
-                        update_session.add(record)
-                        # Commit happens on session exit
-                    else:
-                        log.error(
-                            "Could not find record to update status after API error",
-                            record_id=record_id,
-                        )
-            except Exception as commit_err:
-                log.error(
-                    "Failed session/commit updating FAILED_METADATA status after API error",
-                    record_id=record_id,
-                    error=str(commit_err),
-                )
+            # Catches errors initializing UoW or during UoW commit/rollback
+            log.exception("Error during Task 3 Unit of Work execution", error=str(e))
             error_count += 1
-            # --- End Sync DB Update for API Error --- #
 
-        finally:
-            # --- Close Service Instance --- #
-            if metadata_service:
-                try:
-                    await metadata_service.close()
-                    log.info(
-                        "MetadataExtractionService closed for record",
-                        record_id=record_id,
-                    )
-                except Exception as close_err:
-                    log.error(
-                        "Failed to close service for record",
-                        record_id=record_id,
-                        error=str(close_err),
-                    )
-            records_processed_ids.add(record_id)
+    finally:
+        # --- Ensure Service Cleanup --- #
+        if metadata_service and hasattr(metadata_service, 'close'):
+            try:
+                log.info("Attempting to close MetadataExtractionService client.")
+                await metadata_service.close()
+                log.info("MetadataExtractionService client closed successfully.")
+            except Exception as close_err:
+                log.warning(
+                    "Error closing MetadataExtractionService client",
+                    error=str(close_err)
+                )
 
-    # Log final summary counts
+    # --- Log Final Summary --- #
     log.info(
-        "Task 3 Summary", found=records_found, success=success_count, errors=error_count
+        "Task 3 Summary",
+        found=records_found,
+        success=success_count,
+        errors=error_count,
     )
     return records_found, success_count, error_count

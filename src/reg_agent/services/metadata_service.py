@@ -32,7 +32,7 @@ from reg_agent.schemas.metadata import (
 
 # --- Constants --- #
 # Define longer timeouts and more retries
-REQUEST_TIMEOUT_SECONDS = 180.0
+REQUEST_TIMEOUT_SECONDS = 360.0
 CONNECT_TIMEOUT_SECONDS = 20.0  # Keep connect timeout reasonable
 MAX_RETRIES = 3
 

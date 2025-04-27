@@ -8,8 +8,8 @@ This project is managed using `uv` for dependency management and `ruff` for lint
 
 ## Core Features
 
-*   **Database:** Uses DuckDB via SQLModel ORM and the Repository pattern (`FileRepository`).
-*   **Schema:** Stores file metadata and content in the `filerecord` table, including `source_path`, `filename`, `blob`, `size_bytes`, `last_modified_ts`, `extracted_text` (Markdown), `status` (tracking processing stage), and `meta_data` (JSON).
+*   **Database:** Uses DuckDB via SQLModel ORM. Data access is managed using the **Repository pattern** (specifically `DocumentRepository` inheriting from `AbstractDocumentRepository`) and the **Unit of Work pattern** (`SqlModelUnitOfWork`) to ensure decoupled, testable, and transactional database interactions.
+*   **Schema:** Stores file metadata and content in the `filerecord` table, including `source_path`, `filename`, `blob`, `size_bytes`, `last_modified_ts`, `extracted_text` (Markdown), `status` (tracking processing stage), and `meta_data` (JSON). The repository provides methods for querying based on standard fields and generic JSON `meta_data` fields.
 *   **Ingestion Pipeline:** Provides a CLI (`reg-agent ingest run`) to execute a multi-stage ingestion pipeline:
     1.  **Record Creation:** Scans directories, reads file metadata, and creates initial `FileRecord` entries, skipping duplicates based on `source_path`.
     2.  **OCR Extraction:** Integrates with the `docling` library (`OcrService`) to automatically extract Markdown text from PDF files and store it in `extracted_text`.

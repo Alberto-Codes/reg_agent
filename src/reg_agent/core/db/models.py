@@ -3,9 +3,9 @@ Defines the SQLModel ORM models for the database.
 """
 
 import uuid
-from datetime import datetime  # Import datetime object directly
+from datetime import datetime, timezone  # Add timezone
 from enum import Enum  # Import Enum
-from typing import Any, Dict, Optional  # Import Dict
+from typing import Any, Dict, Optional  # Add List for potential future use
 
 from sqlalchemy import Column, LargeBinary  # Import TIMESTAMP, Column, LargeBinary
 from sqlalchemy.types import JSON  # Import JSON
@@ -56,10 +56,11 @@ class FileRecord(SQLModel, table=True):
     last_modified_ts: Optional[datetime] = Field(default=None)
     # Processing status
     status: FileStatus = Field(default=FileStatus.PENDING_PROCESS, index=True)
-    # Timestamps for tracking
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Timestamps for tracking - use timezone.utc
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = Field(
-        default_factory=datetime.utcnow, sa_column_kwargs={"onupdate": datetime.utcnow}
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
     )
 
     # Future potential fields (examples):
