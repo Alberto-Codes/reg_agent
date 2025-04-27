@@ -2,6 +2,7 @@ import datetime
 import time
 from pathlib import Path
 from typing import Optional
+import asyncio  # Import asyncio
 
 import structlog
 
@@ -14,12 +15,16 @@ from reg_agent.core.db.connection import (
 )
 from reg_agent.core.db.models import FileRecord  # Import the model
 from reg_agent.core.db.repositories import FileRepository  # Import the repository
+
+# Import services
+from reg_agent.services.metadata_service import MetadataExtractionService
 from reg_agent.services.ocr_service import OcrService
 
 log = structlog.get_logger()
 
 
-def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
+# Make the function async
+async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
     """Scans a directory and ingests files into the database using SQLModel and Repository.
 
     Args:
@@ -41,17 +46,35 @@ def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
     error_count = 0
     start_time = time.monotonic()
 
-    # Instantiate OcrService once
-    ocr_service = OcrService()
-    # Check if the converter was initialized successfully
-    ocr_available = ocr_service.converter is not None
-    if not ocr_available:
-        log.warning(
-            "OCR Service converter not initialized. Text extraction will be skipped."
-        )
-        # Decide if we should proceed without OCR or halt. For now, proceed.
+    # --- Initialize Services --- #
+    ocr_service: Optional[OcrService] = None
+    metadata_service: Optional[MetadataExtractionService] = None
+    ocr_available = False
+    metadata_available = False
 
-    # Get the engine instance (potentially initializing it with the specified db_file)
+    try:
+        ocr_service = OcrService()
+        ocr_available = ocr_service.converter is not None
+        if not ocr_available:
+            log.warning(
+                "OCR Service converter not initialized. Text extraction will be skipped."
+            )
+    except Exception as ocr_init_err:
+        log.exception("Failed to initialize OcrService", error=str(ocr_init_err))
+        # Continue without OCR
+
+    try:
+        metadata_service = MetadataExtractionService()
+        metadata_available = True
+        log.info("MetadataExtractionService initialized successfully.")
+    except Exception as meta_init_err:
+        log.exception(
+            "Failed to initialize MetadataExtractionService", error=str(meta_init_err)
+        )
+        # Continue without Metadata extraction
+
+    # --- Database Setup --- #
+    engine = None  # Ensure engine is defined for finally block
     try:
         engine = get_engine(db_file=db_file)
         create_db_and_tables(engine)  # Ensure tables exist using the correct engine
@@ -60,17 +83,25 @@ def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
             "Failed to initialize database engine or tables. Halting ingestion.",
             error=str(e),
         )
+        # Ensure metadata service client is closed if initialized
+        if metadata_service and hasattr(metadata_service, "close"):
+            await metadata_service.close()
         return  # Stop ingestion if DB setup fails
 
-    # Use the session context manager with the specific engine
+    # --- Main Processing Loop --- #
     try:
-        with get_session(engine=engine) as session:  # Pass the specific engine
+        with get_session(engine=engine) as session:
             log.debug("Database session obtained for ingestion.")
             file_repo = FileRepository(session)  # Instantiate repository with session
 
             for file_path in source_dir.rglob("*"):
                 if file_path.is_file():
                     source_path_str = str(file_path.resolve())  # Use absolute path
+                    extracted_markdown: Optional[str] = None
+                    extracted_meta_dict: Optional[dict] = (
+                        None  # Variable for metadata dict
+                    )
+
                     try:
                         # 1. Check if record exists using the repository
                         if file_repo.exists_by_source_path(source_path_str):
@@ -90,39 +121,72 @@ def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
                         with open(file_path, "rb") as f:
                             blob_content = f.read()
 
-                        # 4. Attempt Text Extraction
-                        extracted_markdown: Optional[str] = None  # Ensure type hint
-                        if ocr_available:  # Use the flag set earlier
+                        # 4. Attempt Text Extraction (OCR)
+                        if ocr_available and ocr_service:
                             try:
-                                # OcrService internally checks if file is PDF
                                 extracted_markdown = (
                                     ocr_service.extract_markdown_from_file(file_path)
                                 )
-                                # Log success/failure inside extract_markdown_from_file
                             except Exception as ocr_err:
                                 log.warning(
-                                    "Failed to extract text from file",
+                                    "Failed to extract text from file (OCR)",
                                     file=source_path_str,
                                     error=str(ocr_err),
-                                    exc_info=False,  # Keep log cleaner, details in OcrService logs
+                                    exc_info=False,
                                 )
-                                # Proceed without extracted text
 
-                        # 5. Create FileRecord Model instance
+                        # 5. Attempt Metadata Extraction
+                        if (
+                            metadata_available
+                            and metadata_service
+                            and extracted_markdown
+                        ):
+                            log.debug(
+                                "Attempting metadata extraction", file=source_path_str
+                            )
+                            try:
+                                # Call the async metadata service
+                                extracted_meta_model = (
+                                    await metadata_service.extract_metadata(
+                                        extracted_markdown
+                                    )
+                                )
+                                if extracted_meta_model:
+                                    # Convert Pydantic model to dict
+                                    extracted_meta_dict = (
+                                        extracted_meta_model.model_dump()
+                                    )
+                                    log.info(
+                                        "Metadata extracted successfully",
+                                        file=source_path_str,
+                                    )
+                                else:
+                                    log.warning(
+                                        "Metadata extraction returned None",
+                                        file=source_path_str,
+                                    )
+                            except Exception as meta_err:
+                                log.warning(
+                                    "Failed to extract metadata from text",
+                                    file=source_path_str,
+                                    error=str(meta_err),
+                                    exc_info=False,
+                                )
+
+                        # 6. Create FileRecord Model instance
                         new_record = FileRecord(
                             source_path=source_path_str,
                             filename=filename,
                             blob=blob_content,
-                            extracted_text=extracted_markdown,  # Add extracted text here
+                            extracted_text=extracted_markdown,
+                            meta_data=extracted_meta_dict,  # Assign metadata dict
                             size_bytes=size_bytes,
                             last_modified_ts=last_modified_ts,
-                            # id is generated automatically by default UUID
                         )
 
-                        # 6. Add record to session via repository
+                        # 7. Add record to session via repository
                         file_repo.add(new_record)  # Repository adds to session
                         inserted_count += 1
-                        # Logging is handled within repository.add
 
                     except OSError as e:
                         error_count += 1
@@ -131,25 +195,25 @@ def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
                             file=str(file_path),
                             error=str(e),
                         )
-                    except (
-                        Exception
-                    ) as e:  # Catch broader exceptions during file processing
+                    except Exception as e:
                         error_count += 1
-                        # Log exception from file processing loop
                         log.exception(
                             "Unexpected error processing file",
                             file=str(file_path),
                             error=str(e),
                         )
 
-            # Session commits automatically upon exiting the 'with' block if no exceptions occured
             log.debug("Session commit (or rollback) handled by context manager.")
 
-    except Exception as e:  # Catch errors related to session creation or commit
-        error_count += 1  # Count DB session/commit errors
-        # Log exception from session management block
+    except Exception as e:
+        error_count += 1
         log.exception("Database session/commit error during ingestion", error=str(e))
-    # No finally block needed for closing connection, session manager handles it
+    finally:
+        # --- Service Cleanup --- #
+        if metadata_service and hasattr(metadata_service, "close"):
+            log.info("Closing MetadataExtractionService client.")
+            await metadata_service.close()
+        # No explicit close needed for OcrService currently
 
     end_time = time.monotonic()
     duration = end_time - start_time
@@ -215,7 +279,7 @@ if __name__ == "__main__":  # pragma: no cover
         "Ingesting example files", source=str(EXAMPLE_DIR), db=str(example_db_path)
     )
     # Pass the specific DB path to ensure the correct engine is used
-    ingest_files(EXAMPLE_DIR, db_file=example_db_path)
+    asyncio.run(ingest_files(EXAMPLE_DIR, db_file=example_db_path))
 
     log.info("Checking database content after example ingestion...")
     try:

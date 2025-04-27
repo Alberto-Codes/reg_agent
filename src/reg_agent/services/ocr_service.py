@@ -118,10 +118,10 @@ class OcrService:
 
         try:
             results = self.converter.convert_all([file_path])
-            # Use next() to get the single item from the generator
+            # Use next() with iter() to get the single item from the iterable
             conv_result = next(
-                results, None
-            )  # Use None as default if generator is empty
+                iter(results), None # Get iterator from results
+            )  # Use None as default if iterable is empty
 
             if conv_result is None:
                 log.warning(
