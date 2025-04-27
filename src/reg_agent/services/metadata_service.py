@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 # --- Pydantic-AI Imports ---
 from pydantic_ai.agent import Agent
-from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.openai import OpenAIModel, OpenAIModelSettings
 from pydantic_ai.providers.openai import OpenAIProvider
 
 # --- Internal Imports ---
@@ -17,9 +17,11 @@ from ..auth.http_auth import DynamicBearerAuth  # Import from new location
 from ..schemas.metadata import RegulationDocumentMetadata  # Import schema
 from ..config import MODEL_NAME, BASE_URL, TARGET_SA_NAME_OR_EMAIL, log  # Import config
 
-# Remove configuration functions and constants (moved to config.py)
-# Remove DynamicBearerAuth class (moved to auth/http_auth.py)
-# Remove RegulationDocumentMetadata class (moved to schemas/metadata.py)
+# --- Constants --- #
+# Define longer timeouts and more retries
+REQUEST_TIMEOUT_SECONDS = 180.0
+CONNECT_TIMEOUT_SECONDS = 20.0 # Keep connect timeout reasonable
+MAX_RETRIES = 3
 
 
 # --- Service Definition ---
@@ -38,6 +40,11 @@ class MetadataExtractionService:
 
         auth_method = "Direct ADC"
         direct_adc_token: Optional[str] = None
+        timeout_config = httpx.Timeout(
+            REQUEST_TIMEOUT_SECONDS,
+            connect=CONNECT_TIMEOUT_SECONDS
+        )
+        log.info("Configured HTTP timeout", timeout=timeout_config)
 
         if TARGET_SA_NAME_OR_EMAIL:  # Use imported config constant
             log.info("Impersonation requested", target_sa_input=TARGET_SA_NAME_OR_EMAIL)
@@ -51,10 +58,15 @@ class MetadataExtractionService:
                     target_sa_email=self.token_manager.target_service_account,
                 )
                 auth_method = f"Impersonated ADC (Target: {self.token_manager.target_service_account})"
+                # Create AsyncClient with custom timeout and auth
                 self.http_client = httpx.AsyncClient(
-                    auth=DynamicBearerAuth(self.token_manager)  # Use imported class
+                    auth=DynamicBearerAuth(self.token_manager),  # Use imported class
+                    timeout=timeout_config # Apply custom timeout
                 )
-                log.info("Using httpx client with dynamic token for impersonation.")
+                log.info(
+                    "Using httpx.AsyncClient with dynamic token for impersonation",
+                    timeout_config=str(timeout_config)
+                )
             except Exception as tm_err:
                 log.error(
                     "Failed to initialize ImpersonatedTokenManager", exc_info=True
@@ -91,23 +103,39 @@ class MetadataExtractionService:
                 ) from adc_err
 
         log.info(
-            "Initializing MetadataExtractionService",
-            model=MODEL_NAME,  # Use imported config constant
-            base_url=BASE_URL,  # Use imported config constant
+            "Initializing MetadataExtractionService Provider/Model",
+            model=MODEL_NAME,
+            base_url=BASE_URL,
             auth_method=auth_method,
             output_type=self.output_type.__name__,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+            max_retries=MAX_RETRIES
         )
 
         try:
+            # Initialize provider differently based on auth method
             if self.http_client:
+                # Pass base_url and the custom async client directly
+                log.info(
+                    "Initializing OpenAIProvider with custom httpx.AsyncClient",
+                    base_url=BASE_URL,
+                    timeout_config=str(self.http_client.timeout)
+                )
                 provider = OpenAIProvider(
-                    base_url=BASE_URL,  # Use imported config constant
-                    http_client=self.http_client,
+                    base_url=BASE_URL,
+                    http_client=self.http_client
+                    # Timeout/retries are now handled by the http_client
                 )
             elif direct_adc_token:
+                # Pass base_url and ADC token as api_key
+                log.info(
+                    "Initializing OpenAIProvider with direct ADC token",
+                    base_url=BASE_URL
+                )
                 provider = OpenAIProvider(
-                    base_url=BASE_URL,  # Use imported config constant
-                    api_key=direct_adc_token,
+                    base_url=BASE_URL,
+                    api_key=direct_adc_token
+                    # Rely on OpenAIModel/library defaults for timeout/retries here
                 )
             else:
                 log.error(
@@ -117,8 +145,9 @@ class MetadataExtractionService:
                     "Failed to determine authentication method for OpenAIProvider."
                 )
 
+            # Remove model_settings, rely on provider/client settings
             llm = OpenAIModel(
-                MODEL_NAME,  # Use imported config constant
+                MODEL_NAME,
                 provider=provider,
             )
             self.agent = Agent(model=llm, output_type=self.output_type)
@@ -148,7 +177,7 @@ class MetadataExtractionService:
         prompt = f"""Analyze the following regulatory document text and extract structured metadata according to the requested format.
 Focus on identifying key details like document type, issuing agency, subject institution, document identifier, key topics, action items, and a summary.
 
-IMPORTANT: You MUST provide a value for ALL fields defined in the requested format. 
+IMPORTANT: You MUST provide a value for ALL fields defined in the requested format.
 - If the information for a string field (like 'document_type', 'issuing_agency', 'subject_institution', 'document_identifier') cannot be clearly determined from the text, return the string value 'N/A' for that field. Do NOT omit the field.
 - For list fields (like 'key_topics', 'action_items'), return an empty list [] if no relevant items are found. Do NOT omit the field.
 - The 'summary' field must always contain a concise summary.
@@ -171,6 +200,8 @@ Respond ONLY with the structured data requested, ensuring all defined fields are
             return result
         except Exception as e:
             log.error("Metadata extraction failed", error=str(e), exc_info=True)
+            # Consider logging specific error types differently if needed
+            # e.g., differentiate APIConnectionError from validation errors
             return None
 
     async def close(self):

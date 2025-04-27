@@ -221,9 +221,6 @@ async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
     log.info("Starting Task 3: Extract Metadata")
     metadata_service: Optional[MetadataExtractionService] = None
     try:
-        metadata_service = MetadataExtractionService()
-        log.info("MetadataExtractionService initialized for Task 3.")
-
         with get_session(engine=engine) as session:
             file_repo = FileRepository(session)
 
@@ -242,6 +239,10 @@ async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
                  # session.commit()
                  # log.debug("Marked record for metadata processing", record_id=record.id)
 
+                 # Add a small delay between API calls within the loop
+                 log.debug("Applying short delay before metadata API call", record_id=record.id, delay_sec=2)
+                 time.sleep(2)
+
                  if not record.extracted_text:
                      log.warning("Skipping metadata: Record has no extracted text despite PENDING_METADATA status", record_id=record.id)
                      record.status = FileStatus.FAILED_UNKNOWN # Or a more specific error status
@@ -250,7 +251,11 @@ async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
                      continue
 
                  try:
-                     extracted_meta_model = await metadata_service.extract_metadata(
+                     # Recreate service for each record
+                     service = MetadataExtractionService()
+                     log.info("MetadataExtractionService recreated for record", record_id=record.id)
+
+                     extracted_meta_model = await service.extract_metadata(
                          record.extracted_text
                      )
                      if extracted_meta_model:
@@ -258,13 +263,15 @@ async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
                          record.status = FileStatus.COMPLETED # <<< Update status
                          updated_t3_success += 1
                          session.add(record) # Stage update
-                         log.debug("Metadata extracted successfully, status set to COMPLETED", record_id=record.id)
+                         session.commit() # <<< Commit after each successful update
+                         log.debug("Metadata extracted successfully, status set to COMPLETED and committed", record_id=record.id)
                      else:
                          record.status = FileStatus.FAILED_METADATA # <<< Update status
                          error_t3 += 1
                          session.add(record) # Stage update
+                         session.commit() # <<< Commit after each failure update
                          log.warning(
-                             "Metadata extraction returned None, status set to FAILED_METADATA",
+                             "Metadata extraction returned None, status set to FAILED_METADATA and committed",
                              record_id=record.id,
                              path=record.source_path,
                          )
@@ -273,28 +280,37 @@ async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
                      record.status = FileStatus.FAILED_METADATA # <<< Update status
                      error_t3 += 1
                      session.add(record) # Stage update
-                     log.warning(
-                         "Failed to extract metadata (API Error in Task 3), status set to FAILED_METADATA",
-                         record_id=record.id,
-                         path=record.source_path,
-                         error=str(e),
-                         exc_info=False, # Keep log cleaner
-                     )
-            # Explicitly commit session after processing all records in Task 3 batch
-            session.commit()
-            log.info("Task 3: Metadata extraction processing loop complete and session committed.")
+                     # Attempt to commit even after an API error to save the FAILED status
+                     try:
+                         session.commit()
+                         log.warning(
+                             "Failed to extract metadata (API Error in Task 3), status set to FAILED_METADATA and committed",
+                             record_id=record.id,
+                             path=record.source_path,
+                             error=str(e),
+                             exc_info=False, # Keep log cleaner
+                         )
+                     except Exception as commit_err:
+                         log.error(
+                             "Failed to commit FAILED_METADATA status after API error",
+                             record_id=record.id,
+                             commit_error=str(commit_err),
+                             original_error=str(e)
+                         )
+                         # If commit fails here, the session might be unusable, consider rollback/closing?
+                         # session.rollback()
+
+                 finally:
+                     # Ensure client is closed for this record
+                     await service.close()
+                     log.info("MetadataExtractionService closed for record", record_id=record.id)
+
+            log.info("Task 3: Metadata extraction processing loop finished.")
 
     except Exception as e:
         # Errors here are likely service init or session-level problems
         error_t3 += 1 # Count general Task 3 errors (init, session, etc.)
         log.exception("Error during Task 3 setup or session management (Metadata)", error=str(e))
-    finally:
-        if metadata_service and hasattr(metadata_service, "close"):
-            log.info("Closing MetadataExtractionService client after Task 3.")
-            try:
-                await metadata_service.close()
-            except Exception as close_err:
-                 log.error("Error closing metadata service client", error=str(close_err))
 
     task3_duration = time.monotonic() - task3_start_time
     log.info(
