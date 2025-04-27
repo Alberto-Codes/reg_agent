@@ -21,10 +21,12 @@ from reg_agent.core.db.repositories import FileRepository  # Import the reposito
 # Import services
 from reg_agent.services.metadata_service import MetadataExtractionService
 from reg_agent.services.ocr_service import OcrService
+from reg_agent.utils.timing import log_task_duration  # <<< Import decorator
 
 log = structlog.get_logger()
 
 
+@log_task_duration("ingestion_pipeline")  # <<< Apply decorator
 async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
     """Scans a directory and ingests files into the database using a status-based approach:
     1. Create initial records (status: PENDING_PROCESS).
@@ -44,10 +46,9 @@ async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
         )
         return
 
-    overall_start_time = time.monotonic()
     log.info(
-        "Starting ingestion pipeline", source_dir=str(source_dir), db_file=str(db_file)
-    )
+        "Ingestion details", source_dir=str(source_dir), db_file=str(db_file)
+    )  # Changed log message slightly
 
     # --- Database Setup --- #
     try:
@@ -116,7 +117,7 @@ async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
                         )
             # Session commits automatically on exit of 'with' block if no exceptions
             session.commit() # Explicit commit after loop might be safer
-            log.info("Task 1: Initial record creation complete and session committed.")
+            log.info("Task 1: Initial record creation loop finished and session committed.")
     except Exception as e:
         error_t1 += 1 # Count session/commit errors for Task 1
         log.exception("Database session/commit error during Task 1", error=str(e))
@@ -148,15 +149,9 @@ async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
                 # Fetch records needing OCR based on status
                 records_to_ocr = file_repo.get_records_by_status(FileStatus.PENDING_PROCESS)
                 processed_t2 = len(records_to_ocr)
-                log.info(f"Found {processed_t2} records with status PENDING_PROCESS for OCR.")
+                log.info(f"Task 2: Found {processed_t2} records with status PENDING_PROCESS for OCR.")
 
                 for record in records_to_ocr:
-                    # Optional: Mark as processing
-                    # record.status = FileStatus.PROCESSING_OCR
-                    # session.add(record) # Need to add again if modifying
-                    # session.commit() # Commit immediately? Or batch?
-                    # log.debug("Marked record for OCR processing", record_id=record.id)
-
                     try:
                         extracted_markdown = ocr_service.extract_markdown_from_file(
                             Path(record.source_path)
@@ -191,7 +186,7 @@ async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
 
                 # Explicitly commit session after processing all records in Task 2 batch
                 session.commit()
-                log.info("Task 2: OCR processing loop complete and session committed.")
+                log.info("Task 2: OCR processing loop finished and session committed.")
     except Exception as e:
         # Errors here are likely service init or session-level problems
         error_t2 += 1 # Count general Task 2 errors (init, session, etc.)
@@ -210,9 +205,6 @@ async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
         errors=error_t2,
     )
 
-    # --- REMOVED time.sleep(1) --- #
-    # The status field handles the transition logic now.
-
     # --- Task 3: Extract Metadata --- #
     task3_start_time = time.monotonic()
     processed_t3 = 0
@@ -224,21 +216,12 @@ async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
         with get_session(engine=engine) as session:
             file_repo = FileRepository(session)
 
-            # --- REMOVED DIAGNOSTIC LOGGING --- #
-            # The status field is now the primary way to track state.
-
             # Fetch records needing metadata based on status
             records_to_process = file_repo.get_records_by_status(FileStatus.PENDING_METADATA)
             processed_t3 = len(records_to_process)
-            log.info(f"Found {processed_t3} records with status PENDING_METADATA.")
+            log.info(f"Task 3: Found {processed_t3} records with status PENDING_METADATA.")
 
             for record in records_to_process:
-                 # Optional: Mark as processing
-                 # record.status = FileStatus.PROCESSING_METADATA
-                 # session.add(record)
-                 # session.commit()
-                 # log.debug("Marked record for metadata processing", record_id=record.id)
-
                  # Add a small delay between API calls within the loop
                  log.debug("Applying short delay before metadata API call", record_id=record.id, delay_sec=2)
                  time.sleep(2)
@@ -297,15 +280,13 @@ async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
                              commit_error=str(commit_err),
                              original_error=str(e)
                          )
-                         # If commit fails here, the session might be unusable, consider rollback/closing?
-                         # session.rollback()
-
                  finally:
                      # Ensure client is closed for this record
                      await service.close()
                      log.info("MetadataExtractionService closed for record", record_id=record.id)
 
             log.info("Task 3: Metadata extraction processing loop finished.")
+            session.commit() # Final commit for Task 3 just in case? No, commits are inside loop now
 
     except Exception as e:
         # Errors here are likely service init or session-level problems
@@ -321,29 +302,22 @@ async def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
         errors=error_t3,
     )
 
-    # --- Pipeline Summary --- #
-    overall_duration = time.monotonic() - overall_start_time
-    log.info(
-        "Ingestion pipeline completed.",
-        total_duration_seconds=f"{overall_duration:.2f}",
-        task1_inserted=inserted_t1,
-        task1_skipped=skipped_t1,
-        task1_errors=error_t1,
-        task2_found=processed_t2,
-        task2_ocr_success=updated_t2_success,
-        task2_ocr_skipped=updated_t2_skipped,
-        task2_errors=error_t2,
-        task3_found=processed_t3,
-        task3_metadata_success=updated_t3_success,
-        task3_errors=error_t3,
-    )
-
 
 # Example Usage (can be triggered by CLI later)
 if __name__ == "__main__":  # pragma: no cover
     # Basic logging setup for direct script execution
     # Minimal structlog setup for this block
-    # ... (logging setup remains the same) ...
+    structlog.configure(
+        processors=[
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            structlog.processors.StackInfoRenderer(),
+            structlog.dev.ConsoleRenderer(),
+        ],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
 
     log.info("Running ingestion loader example")
 
