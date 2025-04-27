@@ -22,30 +22,31 @@ from pydantic_ai.providers.openai import OpenAIProvider
 load_dotenv()
 log = structlog.get_logger()
 
-# Model name needs publisher prefix (e.g., "google/gemini-1.5-flash-latest")
-_raw_model_name = os.getenv("VERTEX_MODEL_NAME", 'google/gemini-1.5-flash-latest') # Updated default
-if not _raw_model_name.startswith("google/"):
-    log.warning(
-        "VERTEX_MODEL_NAME provided without 'google/' prefix. Prepending.",
-        raw_name=_raw_model_name
-    )
-    MODEL_NAME = f"google/{_raw_model_name}"
-else:
-    MODEL_NAME = _raw_model_name
+def _get_required_env_var(var_name: str) -> str:
+    """Gets an environment variable, raising an error if it's not set."""
+    value = os.getenv(var_name)
+    if not value:
+        log.error(f"{var_name} environment variable is required but not set.")
+        raise ValueError(f"{var_name} must be set via environment variable.")
+    return value
 
-# Base URL for the Vertex OpenAI-compatible endpoint is now required
-BASE_URL = os.getenv("VERTEX_OPENAI_ENDPOINT_URL")
+def _get_vertex_model_name() -> str:
+    """Gets the Vertex AI model name, ensuring the 'google/' prefix."""
+    raw_name = os.getenv("VERTEX_MODEL_NAME", 'google/gemini-1.5-flash-latest')
+    if "/" not in raw_name: # Simpler check if prefix is missing
+        log.warning(
+            "VERTEX_MODEL_NAME potentially missing publisher prefix. Assuming 'google/'.",
+            raw_name=raw_name
+        )
+        return f"google/{raw_name}"
+    # Consider adding check if prefix is other than 'google/' if needed
+    return raw_name
+
+MODEL_NAME = _get_vertex_model_name()
+BASE_URL = _get_required_env_var("VERTEX_OPENAI_ENDPOINT_URL")
+
 # API Key is no longer used directly for authentication
 # API_KEY = os.getenv("VERTEX_API_KEY", "None") # Default to string "None" as placeholder
-
-if not MODEL_NAME:
-    # This is a critical configuration, raise error if missing
-    log.error("VERTEX_MODEL_NAME environment variable is required but not set.")
-    raise ValueError("VERTEX_MODEL_NAME must be set via environment variable.")
-if not BASE_URL:
-    log.error("VERTEX_OPENAI_ENDPOINT_URL environment variable is required but not set.")
-    raise ValueError("VERTEX_OPENAI_ENDPOINT_URL must be set via environment variable.")
-
 
 # --- Response Model ---
 class BaseMetadata(BaseModel):
@@ -169,27 +170,35 @@ async def main_test():
 
 
 if __name__ == "__main__":
-    # Basic logging setup for direct execution
-    # Ensures logger is configured only once if script is reloaded
+    # Configure structlog for basic console output when run directly
+    structlog.configure(
+        processors=[
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+    formatter = structlog.stdlib.ProcessorFormatter(
+        # Use ConsoleRenderer for prettier output
+        processor=structlog.dev.ConsoleRenderer(),
+        # foreign_pre_chain tells ProcessorFormatter to add its own processors
+        # before the ConsoleRenderer, ensuring timestamps etc. are included.
+        foreign_pre_chain=[
+            structlog.stdlib.add_logger_name,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.CallsiteParameterAdder(
+                {structlog.processors.CallsiteParameter.PATHNAME,
+                 structlog.processors.CallsiteParameter.LINENO}
+            ),
+        ]
+    )
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
     root_logger = logging.getLogger()
-    if not root_logger.hasHandlers():
-        structlog.configure(
-            processors=[
-                structlog.stdlib.add_log_level,
-                structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
-            ],
-            logger_factory=structlog.stdlib.LoggerFactory(),
-            wrapper_class=structlog.stdlib.BoundLogger,
-            cache_logger_on_first_use=True,
-        )
-        formatter = structlog.stdlib.ProcessorFormatter(
-            processor=structlog.dev.ConsoleRenderer()
-        )
-        handler = logging.StreamHandler()
-        handler.setFormatter(formatter)
-        root_logger.addHandler(handler)
-        root_logger.setLevel(logging.INFO)  # Set default level
-    # Ensure level is set even if handlers existed
+    root_logger.addHandler(handler)
     root_logger.setLevel(logging.INFO)
 
+    log.info("Running metadata service in standalone test mode.")
     asyncio.run(main_test())
