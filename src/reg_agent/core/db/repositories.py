@@ -4,10 +4,10 @@ Contains repository classes for database interactions.
 
 import abc
 import uuid
-from typing import Any, Dict, List, Optional  # Combine typing imports
+from typing import Any, Dict, List, Optional, Generator  # Added Generator
 
 import structlog
-from sqlalchemy import text # Add text import for later use
+from sqlalchemy import text, and_  # Added and_
 from sqlmodel import Session, select
 
 from reg_agent.core.db.models import FileRecord, FileStatus
@@ -50,12 +50,14 @@ class AbstractDocumentRepository(abc.ABC):
     @abc.abstractmethod
     def get_distinct_values(self, metadata_key: str) -> List[Any]:
         """
-        Gets the distinct values for a specific key within the meta_data JSON field.
+        Gets the distinct, non-null string values for a specific key
+        within the meta_data JSON field across all records.
 
         Args:
             metadata_key: The key within the meta_data JSON to query.
         Returns:
-            A list of unique values for the specified key.
+            A sorted list of unique string values for the specified key.
+            Returns an empty list if the key doesn't exist or has no non-null values.
         """
         raise NotImplementedError
 
@@ -171,17 +173,29 @@ class DocumentRepository(AbstractDocumentRepository):
         log.debug("Finding records by metadata filters", filters=filters)
         try:
             statement = select(FileRecord)
+            conditions = []
+            params_dict = {}
+            i = 0
             # Dynamically build WHERE clauses for each filter
             for key, value in filters.items():
+                # Use unique param names for each condition
+                param_key_name = f"key_{i}"
+                param_value_name = f"value_{i}"
                 # Use DuckDB's json_extract_string via text()
-                # Ensure key is prefixed with '$' for JSON path
-                # Bind parameters to prevent SQL injection
-                # Note: This assumes the value in the JSON is stored as a string
-                #       or can be compared as a string.
-                condition = text("json_extract_string(meta_data, :key) = :value")
-                statement = statement.where(condition).params(key=f'$.{key}', value=str(value))
+                condition = text(
+                    f"json_extract_string(meta_data, :{param_key_name}) = :{param_value_name}"
+                )
+                conditions.append(condition)
+                params_dict[param_key_name] = f'$.{key}'
+                params_dict[param_value_name] = str(value)
+                i += 1
 
-            results = self.session.exec(statement).all()
+            if conditions:
+                # Apply all conditions using 'and_'
+                statement = statement.where(and_(*conditions))
+
+            # Execute with the combined parameters using session.execute
+            results = self.session.execute(statement, params_dict).scalars().all()
             log.info("Found records by metadata", count=len(results), filters=filters)
             return list(results)
         except Exception as e:
@@ -192,21 +206,43 @@ class DocumentRepository(AbstractDocumentRepository):
 
     def get_distinct_values(self, metadata_key: str) -> List[Any]:
         """
-        Gets the distinct values for a specific key within the meta_data JSON field.
-        (Placeholder implementation - requires specific JSON query logic)
+        Gets the distinct, non-null string values for a specific key
+        within the meta_data JSON field across all records.
+
+        Args:
+            metadata_key: The key within the meta_data JSON to query.
+        Returns:
+            A sorted list of unique string values for the specified key.
+            Returns an empty list if the key doesn't exist or has no non-null values.
         """
-        log.warning(
-            "get_distinct_values needs implementation",
-            metadata_key=metadata_key,
-        )
-        # TODO: Implement actual distinct value query on JSON field for DuckDB
-        # Example using raw SQL might be needed if SQLModel/SQLAlchemy Core is tricky:
-        # query = f"""SELECT DISTINCT json_extract_string(meta_data, '$')
-        #           FROM filerecord
-        #           WHERE json_extract_string(meta_data, '$') IS NOT NULL"""
-        # result = self.session.exec(text(query))
-        # return result.scalars().all()
-        raise NotImplementedError # Use raise until implemented
+        log.debug("Getting distinct values for metadata key", key=metadata_key)
+        try:
+            # Construct the JSON path expression
+            json_path = f'$.{metadata_key}'
+            # Use text() for DuckDB's json_extract_string and DISTINCT
+            # Filter out NULL results from json_extract_string
+            query = text(
+                "SELECT DISTINCT json_extract_string(meta_data, :key) as value "
+                "FROM filerecord "
+                "WHERE json_extract_string(meta_data, :key) IS NOT NULL "
+                "ORDER BY value"
+            )
+            # Use session.execute and pass params correctly
+            results = self.session.execute(query, {"key": json_path}).scalars().all()
+            log.info(
+                "Found distinct values for key",
+                key=metadata_key,
+                count=len(results),
+            )
+            # Ensure results are strings
+            return [str(r) for r in results]
+        except Exception as e:
+            log.exception(
+                "Error getting distinct values for metadata key",
+                key=metadata_key,
+                error=str(e),
+            )
+            raise
 
     def get_queryable_fields(self) -> List[str]:
         """

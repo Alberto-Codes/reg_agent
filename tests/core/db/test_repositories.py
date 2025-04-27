@@ -170,5 +170,44 @@ def test_find_by_metadata_not_found(repo: DocumentRepository):
     results = repo.find_by_metadata({"author": "Nobody"})
     assert len(results) == 0
 
+def test_get_distinct_values(session: Session, repo: DocumentRepository):
+    """Test getting distinct values for a metadata key."""
+    meta1 = {"author": "Alice", "year": 2023, "topic": "db"}
+    meta2 = {"author": "Bob", "year": 2024, "topic": "db"}
+    meta3 = {"author": "Alice", "year": 2024, "topic": "ai"}
+    meta4 = {"author": "Charlie", "year": 2023} # Missing topic
+    meta5 = {"author": "Alice", "year": 2023, "topic": "db"} # Duplicate author/topic
+
+    rec1 = create_test_record(source_path="/meta/1.txt", meta_data=meta1)
+    rec2 = create_test_record(source_path="/meta/2.txt", meta_data=meta2)
+    rec3 = create_test_record(source_path="/meta/3.txt", meta_data=meta3)
+    rec4 = create_test_record(source_path="/meta/4.txt", meta_data=meta4)
+    rec5 = create_test_record(source_path="/meta/5.txt", meta_data=meta5)
+    rec_no_meta = create_test_record(source_path="/meta/none.txt", meta_data=None)
+
+    session.add_all([rec1, rec2, rec3, rec4, rec5, rec_no_meta])
+    session.commit()
+
+    # Test distinct authors
+    distinct_authors = repo.get_distinct_values("author")
+    assert sorted(distinct_authors) == ["Alice", "Bob", "Charlie"]
+
+    # Test distinct topics (should ignore null/missing)
+    distinct_topics = repo.get_distinct_values("topic")
+    assert sorted(distinct_topics) == ["ai", "db"]
+
+    # Test distinct years (values stored as numbers, compared as strings by impl.)
+    distinct_years = repo.get_distinct_values("year")
+    assert sorted(distinct_years) == ["2023", "2024"]
+
+    # Test key that doesn't exist
+    distinct_nonexistent = repo.get_distinct_values("nonexistent_key")
+    assert len(distinct_nonexistent) == 0
+
+def test_get_distinct_values_no_metadata(repo: DocumentRepository):
+    """Test getting distinct values when no records have metadata."""
+    distinct_authors = repo.get_distinct_values("author")
+    assert len(distinct_authors) == 0
+
 # TODO: Add tests for get_records_needing_ocr, get_records_needing_metadata
-# TODO: Add tests for find_by_metadata (more edge cases?), get_distinct_values, get_queryable_fields once implemented
+# TODO: Add tests for find_by_metadata (more edge cases?), get_queryable_fields once implemented
