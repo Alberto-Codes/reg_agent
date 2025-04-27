@@ -7,11 +7,12 @@ import uuid
 from unittest.mock import MagicMock
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 # Modules/Classes to test
 from reg_agent.core.db import models
 from reg_agent.core.db.repositories import FileRepository
+from reg_agent.core.db.models import FileRecord, FileStatus
 
 # Configure structlog for testing (if capturing logs)
 # structlog.configure(processors=[structlog.testing.LogCapture()])
@@ -132,4 +133,44 @@ def test_exists_by_source_path_failure(
         file_repository.exists_by_source_path(test_path)
 
     # Verify exec was called
+    mock_session.exec.assert_called_once()
+
+
+def test_get_records_by_status_found(mock_session: MagicMock):
+    repo = FileRepository(mock_session)
+    # Dummy records to be returned
+    records = [
+        FileRecord(id=uuid.uuid4(), source_path="/p1.txt", status=FileStatus.PENDING_PROCESS),
+        FileRecord(id=uuid.uuid4(), source_path="/p2.txt", status=FileStatus.PENDING_PROCESS),
+    ]
+    # Mock session.exec(...).all() to return the dummy records
+    mock_result = MagicMock()
+    mock_result.all.return_value = records
+    mock_session.exec.return_value = mock_result
+
+    found_records = repo.get_records_by_status(FileStatus.PENDING_PROCESS)
+
+    assert found_records == records
+    mock_session.exec.assert_called_once() # Verify query execution
+    # Optionally, check the statement passed to exec if needed, but can be complex
+
+
+def test_get_records_by_status_not_found(mock_session: MagicMock):
+    repo = FileRepository(mock_session)
+    # Mock session.exec(...).all() to return an empty list
+    mock_result = MagicMock()
+    mock_result.all.return_value = []
+    mock_session.exec.return_value = mock_result
+
+    found_records = repo.get_records_by_status(FileStatus.COMPLETED)
+
+    assert found_records == []
+    mock_session.exec.assert_called_once()
+
+
+def test_get_records_by_status_failure(mock_session: MagicMock):
+    repo = FileRepository(mock_session)
+    mock_session.exec.side_effect = Exception("DB Query Error")
+    with pytest.raises(Exception, match="DB Query Error"):
+        repo.get_records_by_status(FileStatus.FAILED_OCR)
     mock_session.exec.assert_called_once()
