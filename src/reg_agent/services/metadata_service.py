@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import os
-from typing import Optional, Type
+from typing import Optional, Type, List
 
 import google.auth
 import google.auth.transport.requests
@@ -69,14 +69,52 @@ class DynamicBearerAuth(httpx.Auth):
         yield request
 
 
-# --- Response Model ---
-class BaseMetadata(BaseModel):
-    """Basic placeholder for extracted metadata."""
+# --- Response Models ---
+# Removed ActionItem class as it's being simplified to List[str]
+# class ActionItem(BaseModel):
+#     """Represents a required action or remediation item identified in the document."""
+#
+#     description: str = Field(..., description="Description of the required action.")
+#     # Future fields like due_date, status, etc. can be added later.
 
-    summary: str = Field(..., description="A brief summary of the document.")
-    extracted_ok: bool = Field(
-        ..., description="Flag indicating if extraction was successful."
+
+class RegulationDocumentMetadata(BaseModel):
+    """
+    Structured metadata extracted from regulatory documents like Consent Orders or Letters.
+    Designed for flexibility in the MVP stage.
+    All fields are required. Return 'N/A' for missing string fields and [] for missing list fields.
+    """
+
+    document_type: str = Field(
+        description="Inferred type of document (e.g., 'Consent Order', 'Supervisory Letter', 'Examination Report'). Return 'N/A' if not found.",
     )
+    issuing_agency: str = Field(
+        description="Name of the federal agency issuing the document (e.g., OCC, FRB, CFPB, FDIC). Return 'N/A' if not found.",
+    )
+    subject_institution: str = Field(
+        description="Name of the bank or financial institution subject to the document. Return 'N/A' if not found.",
+    )
+    document_identifier: str = Field(
+        description="Official identifier or number for the document, if available (e.g., Order number). Return 'N/A' if not found.",
+    )
+    key_topics: List[str] = Field(
+        default_factory=list,
+        description="List of key topics, regulations, or areas of concern mentioned (e.g., BSA/AML, IT Security, Fair Lending, UDAAP). Extract the most relevant terms. Return [] if none found.",
+    )
+    summary: str = Field(
+        ...,
+        description="A concise summary of the document's purpose and main points, capturing the essence of the regulatory action or communication.",
+    )
+    action_items: List[str] = Field(
+        default_factory=list,
+        description="List of strings, where each string is a specific, discrete action or remediation step required by the institution, if explicitly mentioned. Return [] if none found.",
+    )
+    # Future: Add fields for related documents, severity rating, etc.
+
+    # We can remove extracted_ok as the successful return implies it was ok.
+    # extracted_ok: bool = Field(
+    #     True, description="Flag indicating if the LLM believes extraction was successful."
+    # )
 
 
 # --- Service Definition ---
@@ -87,7 +125,7 @@ class MetadataExtractionService:
     Supports direct ADC or impersonated ADC via TARGET_SA_NAME_OR_EMAIL.
     """
 
-    def __init__(self, output_type: Type[BaseModel] = BaseMetadata):
+    def __init__(self, output_type: Type[BaseModel] = RegulationDocumentMetadata):
         """Initializes the pydantic-ai Agent using OpenAI-compatible settings."""
         self.output_type = output_type
         self.token_manager: Optional[ImpersonatedTokenManager] = None
@@ -216,8 +254,21 @@ class MetadataExtractionService:
             return None
 
         log.debug("Attempting metadata extraction", text_length=len(text))
-        # Simple prompt asking for the defined output structure
-        prompt = f"Extract metadata from the following text:\n\n---\n{text}\n---"
+        # Updated prompt asking for the new, more detailed structure AND specific handling for missing required fields
+        prompt = f"""Analyze the following regulatory document text and extract structured metadata according to the requested format.
+Focus on identifying key details like document type, issuing agency, subject institution, document identifier, key topics, action items, and a summary.
+
+IMPORTANT: You MUST provide a value for ALL fields defined in the requested format. 
+- If the information for a string field (like 'document_type', 'issuing_agency', 'subject_institution', 'document_identifier') cannot be clearly determined from the text, return the string value 'N/A' for that field. Do NOT omit the field.
+- For list fields (like 'key_topics', 'action_items'), return an empty list [] if no relevant items are found. Do NOT omit the field.
+- The 'summary' field must always contain a concise summary.
+
+Document Text:
+---
+{text}
+---
+
+Respond ONLY with the structured data requested, ensuring all defined fields are present in the output."""
 
         try:
             # The agent handles structuring the output based on self.output_type
@@ -225,7 +276,7 @@ class MetadataExtractionService:
             run_result = await self.agent.run(prompt)
             result = (
                 run_result.output
-            )  # Extract the BaseMetadata (or specified type) instance
+            )  # Extract the RegulationDocumentMetadata (or specified type) instance
             log.info(
                 "Metadata extraction successful.", output_type=type(result).__name__
             )
@@ -248,14 +299,46 @@ async def main_test():
     log.info("Starting metadata service test...")
     service = None  # Initialize service to None for finally block
     try:
-        # Initialize using global config, default output type
+        # Initialize using global config, default output type (now RegulationDocumentMetadata)
         service = MetadataExtractionService()
 
-        sample_text = "This is a simple test document about cloud computing and AI."
-        log.info("Running extraction test...", sample_text=sample_text)
+        # Sample text simulating a Consent Order snippet
+        sample_text = """
+        UNITED STATES OF AMERICA
+        DEPARTMENT OF THE TREASURY
+        OFFICE OF THE COMPTROLLER OF THE CURRENCY
+
+        In the Matter of:
+        Example Bank, N.A.
+        City, State
+
+        AA-EC-2024-123
+
+        CONSENT ORDER
+
+        The Office of the Comptroller of the Currency of the United States of America ("OCC"),
+        through its authorized representative, has supervisory authority over Example Bank, N.A., City, State ("Bank").
+
+        The OCC has found unsafe or unsound practices relating to the Bank's Bank Secrecy Act/Anti-Money Laundering ("BSA/AML") compliance program...
+
+        NOW, THEREFORE, the Bank, by and through its duly elected and acting Board of Directors ("Board"), hereby stipulates and consents to the following:
+
+        ARTICLE III
+        BSA/AML COMPLIANCE PROGRAM
+        (1) Within 90 days, the Board shall submit to the Assistant Deputy Comptroller a revised, acceptable written BSA/AML program for the Bank.
+        (2) The program shall ensure adequate staffing and resources for BSA compliance.
+
+        ARTICLE X
+        CIVIL MONEY PENALTY
+        (1) The Bank shall pay a civil money penalty of $2,500,000.
+
+        Effective Date: April 27, 2025
+        """
+        log.info("Running extraction test...", text_snippet=sample_text[:200] + "...")
         metadata_result = await service.extract_metadata(sample_text)
 
         if metadata_result:
+            # Log the full model dump, which will now be RegulationDocumentMetadata
             log.info(
                 "Test extraction successful:",
                 result=metadata_result.model_dump_json(indent=2),
