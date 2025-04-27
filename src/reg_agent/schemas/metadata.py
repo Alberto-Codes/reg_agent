@@ -1,5 +1,6 @@
 # src/reg_agent/schemas/metadata.py
 from typing import List
+
 from pydantic import BaseModel, Field
 
 

@@ -1,6 +1,5 @@
 # src/reg_agent/pipelines/ingestion/tasks/task_2_ocr.py
 
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -8,7 +7,7 @@ import structlog
 from sqlalchemy.engine import Engine
 
 from reg_agent.core.db.connection import get_session
-from reg_agent.core.db.models import FileRecord, FileStatus
+from reg_agent.core.db.models import FileStatus
 from reg_agent.core.db.repositories import FileRepository
 from reg_agent.services.ocr_service import OcrService
 from reg_agent.utils.timing import log_task_duration
@@ -42,14 +41,18 @@ def run_task_2(engine: Engine):
 
         with get_session(engine=engine) as session:
             file_repo = FileRepository(session)
-            records_to_ocr = file_repo.get_records_by_status(
-                FileStatus.PENDING_PROCESS
-            )
+            records_to_ocr = file_repo.get_records_by_status(FileStatus.PENDING_PROCESS)
             records_found = len(records_to_ocr)
             log.info(f"Task 2: Found {records_found} records for OCR.")
 
             if not records_to_ocr:
-                log.info("Task 2 Summary", found=records_found, success=success_count, skipped=skipped_count, errors=error_count)
+                log.info(
+                    "Task 2 Summary",
+                    found=records_found,
+                    success=success_count,
+                    skipped=skipped_count,
+                    errors=error_count,
+                )
                 return records_found, success_count, skipped_count, error_count
 
             for record in records_to_ocr:
@@ -70,7 +73,11 @@ def run_task_2(engine: Engine):
 
                     if record_modified:
                         session.add(record)
-                        log.debug("Staged record update", record_id=record.id, status=record.status)
+                        log.debug(
+                            "Staged record update",
+                            record_id=record.id,
+                            status=record.status,
+                        )
 
                 except Exception as e:
                     error_count += 1
@@ -95,6 +102,6 @@ def run_task_2(engine: Engine):
         found=records_found,
         success=success_count,
         skipped=skipped_count,
-        errors=error_count
+        errors=error_count,
     )
-    return records_found, success_count, skipped_count, error_count 
+    return records_found, success_count, skipped_count, error_count

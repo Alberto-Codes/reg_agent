@@ -9,19 +9,31 @@ from pydantic import BaseModel
 
 # --- Pydantic-AI Imports ---
 from pydantic_ai.agent import Agent
-from pydantic_ai.models.openai import OpenAIModel, OpenAIModelSettings
+from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
+from reg_agent.auth.http_auth import (
+    DynamicBearerAuth,  # type: ignore[import-not-found] # Import from new location
+)
+
 # --- Internal Imports ---
-from reg_agent.auth.token_manager import ImpersonatedTokenManager  # type: ignore[import-not-found]
-from reg_agent.auth.http_auth import DynamicBearerAuth  # type: ignore[import-not-found] # Import from new location
-from reg_agent.schemas.metadata import RegulationDocumentMetadata  # type: ignore[import-not-found] # Import schema
-from reg_agent.config import MODEL_NAME, BASE_URL, TARGET_SA_NAME_OR_EMAIL, log # Remove unused type: ignore
+from reg_agent.auth.token_manager import (
+    ImpersonatedTokenManager,  # type: ignore[import-not-found]
+)
+from reg_agent.config import (
+    BASE_URL,
+    MODEL_NAME,
+    TARGET_SA_NAME_OR_EMAIL,
+    log,
+)  # Remove unused type: ignore
+from reg_agent.schemas.metadata import (
+    RegulationDocumentMetadata,  # type: ignore[import-not-found] # Import schema
+)
 
 # --- Constants --- #
 # Define longer timeouts and more retries
 REQUEST_TIMEOUT_SECONDS = 180.0
-CONNECT_TIMEOUT_SECONDS = 20.0 # Keep connect timeout reasonable
+CONNECT_TIMEOUT_SECONDS = 20.0  # Keep connect timeout reasonable
 MAX_RETRIES = 3
 
 
@@ -42,8 +54,7 @@ class MetadataExtractionService:
         auth_method = "Direct ADC"
         direct_adc_token: Optional[str] = None
         timeout_config = httpx.Timeout(
-            REQUEST_TIMEOUT_SECONDS,
-            connect=CONNECT_TIMEOUT_SECONDS
+            REQUEST_TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS
         )
         log.info("Configured HTTP timeout", timeout=timeout_config)
 
@@ -62,11 +73,11 @@ class MetadataExtractionService:
                 # Create AsyncClient with custom timeout and auth
                 self.http_client = httpx.AsyncClient(
                     auth=DynamicBearerAuth(self.token_manager),  # Use imported class
-                    timeout=timeout_config # Apply custom timeout
+                    timeout=timeout_config,  # Apply custom timeout
                 )
                 log.info(
                     "Using httpx.AsyncClient with dynamic token for impersonation",
-                    timeout_config=str(timeout_config)
+                    timeout_config=str(timeout_config),
                 )
             except Exception as tm_err:
                 log.error(
@@ -110,7 +121,7 @@ class MetadataExtractionService:
             auth_method=auth_method,
             output_type=self.output_type.__name__,
             timeout=REQUEST_TIMEOUT_SECONDS,
-            max_retries=MAX_RETRIES
+            max_retries=MAX_RETRIES,
         )
 
         try:
@@ -120,22 +131,22 @@ class MetadataExtractionService:
                 log.info(
                     "Initializing OpenAIProvider with custom httpx.AsyncClient",
                     base_url=BASE_URL,
-                    timeout_config=str(self.http_client.timeout)
+                    timeout_config=str(self.http_client.timeout),
                 )
                 provider = OpenAIProvider(
                     base_url=BASE_URL,
-                    http_client=self.http_client
+                    http_client=self.http_client,
                     # Timeout/retries are now handled by the http_client
                 )
             elif direct_adc_token:
                 # Pass base_url and ADC token as api_key
                 log.info(
                     "Initializing OpenAIProvider with direct ADC token",
-                    base_url=BASE_URL
+                    base_url=BASE_URL,
                 )
                 provider = OpenAIProvider(
                     base_url=BASE_URL,
-                    api_key=direct_adc_token
+                    api_key=direct_adc_token,
                     # Rely on OpenAIModel/library defaults for timeout/retries here
                 )
             else:

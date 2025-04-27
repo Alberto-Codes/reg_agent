@@ -1,7 +1,6 @@
 # src/reg_agent/pipelines/ingestion/tasks/task_1_create_records.py
 
 import datetime
-import time
 from pathlib import Path
 
 import structlog
@@ -46,7 +45,7 @@ def run_task_1(engine: Engine, source_dir: Path):
                         if file_repo.exists_by_source_path(source_path_str):
                             skipped_count += 1
                             log.debug("Skipped existing file", path=source_path_str)
-                            continue # Skip to next file path
+                            continue  # Skip to next file path
 
                         # File I/O and stat remain sync
                         file_stat = file_path.stat()
@@ -73,7 +72,11 @@ def run_task_1(engine: Engine, source_dir: Path):
                         # Call sync add directly
                         session.add(new_record)
                         inserted_count += 1
-                        log.debug("Staged new FileRecord", path=source_path_str, record_id=new_record.id)
+                        log.debug(
+                            "Staged new FileRecord",
+                            path=source_path_str,
+                            record_id=new_record.id,
+                        )
 
                     # If it's not a file (e.g., a directory), just continue the loop
                     # else: pass # Implicitly continue
@@ -98,14 +101,16 @@ def run_task_1(engine: Engine, source_dir: Path):
 
     except Exception as e:
         # This catches errors initializing the session or repository
-        error_count += 1 # Or should this be handled differently?
-        log.exception("Error during Task 1 session setup or main loop exit", error=str(e))
+        error_count += 1  # Or should this be handled differently?
+        log.exception(
+            "Error during Task 1 session setup or main loop exit", error=str(e)
+        )
 
     # Log final summary counts
     log.info(
         "Task 1 Summary",
         inserted=inserted_count,
         skipped=skipped_count,
-        errors=error_count
+        errors=error_count,
     )
-    return inserted_count, skipped_count, error_count 
+    return inserted_count, skipped_count, error_count

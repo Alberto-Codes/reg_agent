@@ -1,19 +1,23 @@
 # src/reg_agent/pipelines/ingestion/run.py
 
+import asyncio  # Need asyncio to run Task 3
 from pathlib import Path
-import asyncio # Need asyncio to run Task 3
 
 import structlog
+
 # Use sync Engine
 from sqlalchemy.engine import Engine
 
 # --- Core Imports ---
-from reg_agent.core.db.connection import DEFAULT_DB_FILE, get_engine, create_db_and_tables
+from reg_agent.core.db.connection import (
+    DEFAULT_DB_FILE,
+    create_db_and_tables,
+    get_engine,
+)
 
 # --- Service Imports ---
 # from reg_agent.services.metadata_service import MetadataExtractionService
 # from reg_agent.services.ocr_service import OcrService # Not injecting OCR service for now
-
 # --- Task Imports ---
 from reg_agent.pipelines.ingestion.tasks.task_1_create_records import run_task_1
 from reg_agent.pipelines.ingestion.tasks.task_2_ocr import run_task_2
@@ -37,15 +41,13 @@ def run_ingestion_pipeline(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
         source_dir: The directory containing files to ingest.
         db_file: Path to the database file.
     """
-    log.info(
-        "Pipeline run details", source_dir=str(source_dir), db_file=str(db_file)
-    )
+    log.info("Pipeline run details", source_dir=str(source_dir), db_file=str(db_file))
 
     # --- Initial Validation --- #
     if not source_dir.is_dir():
         log.error(
             "Source directory does not exist or is not a directory. Halting pipeline.",
-            path=str(source_dir)
+            path=str(source_dir),
         )
         return
 
@@ -60,7 +62,7 @@ def run_ingestion_pipeline(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
             "Failed to initialize database engine or tables. Halting pipeline.",
             error=str(e),
         )
-        return # Stop if DB setup fails
+        return  # Stop if DB setup fails
 
     # --- Remove Service Initialization from Orchestrator --- #
     # metadata_service: MetadataExtractionService | None = None # Removed
@@ -74,7 +76,7 @@ def run_ingestion_pipeline(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
             "Task 1 (Create Records) summary",
             inserted=t1_inserted,
             skipped=t1_skipped,
-            errors=t1_errors
+            errors=t1_errors,
         )
         # Decide if pipeline should continue based on Task 1 errors?
         # For now, continue even if some file reads failed.
@@ -86,7 +88,7 @@ def run_ingestion_pipeline(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
             found=t2_found,
             success=t2_success,
             skipped=t2_skipped,
-            errors=t2_errors
+            errors=t2_errors,
         )
         # Continue even if OCR failed for some files.
 
@@ -98,7 +100,7 @@ def run_ingestion_pipeline(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
             "Task 3 (Metadata) summary",
             found=t3_found,
             success=t3_success,
-            errors=t3_errors
+            errors=t3_errors,
         )
 
         # --- Pipeline Summary (Optional) --- #
@@ -112,7 +114,9 @@ def run_ingestion_pipeline(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
         )
 
     except Exception as e:
-        log.exception("An unexpected error occurred during pipeline execution.", error=str(e))
+        log.exception(
+            "An unexpected error occurred during pipeline execution.", error=str(e)
+        )
         # This catches errors in service init or task execution not caught internally
 
     # --- Remove Service Cleanup from Orchestrator --- #
@@ -120,4 +124,4 @@ def run_ingestion_pipeline(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
     #     if metadata_service:
     #        asyncio.run(metadata_service.close()) # Removed
 
-    # Decorator handles the final "Finished task: ingestion_pipeline" log 
+    # Decorator handles the final "Finished task: ingestion_pipeline" log

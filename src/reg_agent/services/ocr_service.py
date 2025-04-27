@@ -120,7 +120,8 @@ class OcrService:
             results = self.converter.convert_all([file_path])
             # Use next() with iter() to get the single item from the iterable
             conv_result = next(
-                iter(results), None # Get iterator from results
+                iter(results),
+                None,  # Get iterator from results
             )  # Use None as default if iterable is empty
 
             if conv_result is None:
