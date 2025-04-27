@@ -2,78 +2,17 @@
 Contains repository classes for database interactions.
 """
 
-import abc
 import uuid
-from typing import Any, Dict, List, Optional  # Added Generator
+from typing import Any, Dict, List, Optional
 
 import structlog
-from sqlalchemy import text, and_  # Added and_
+from sqlalchemy import text, and_
 from sqlmodel import Session, select
 
 from reg_agent.core.db.models import FileRecord, FileStatus
+from reg_agent.core.db.repository_abc import AbstractDocumentRepository
 
 log = structlog.get_logger()
-
-
-# --- Abstract Base Class for Repository ---
-class AbstractDocumentRepository(abc.ABC):
-    """Abstract interface for a document repository."""
-
-    @abc.abstractmethod
-    def add(self, record: FileRecord) -> None:
-        """Adds a new FileRecord to the repository."""
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def get_by_id(self, record_id: uuid.UUID) -> Optional[FileRecord]:
-        """Retrieves a FileRecord by its UUID."""
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def exists_by_source_path(self, source_path: str) -> bool:
-        """Checks if a record exists based on its source path."""
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def find_by_metadata(self, filters: Dict[str, Any]) -> List[FileRecord]:
-        """
-        Finds records by matching key-value pairs in the meta_data JSON field.
-
-        Args:
-            filters: A dictionary where keys are metadata field names
-                     and values are the values to filter by.
-        Returns:
-            A list of matching FileRecord objects.
-        """
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def get_distinct_values(self, metadata_key: str) -> List[Any]:
-        """
-        Gets the distinct, non-null string values for a specific key
-        within the meta_data JSON field across all records.
-
-        Args:
-            metadata_key: The key within the meta_data JSON to query.
-        Returns:
-            A sorted list of unique string values for the specified key.
-            Returns an empty list if the key doesn't exist or has no non-null values.
-        """
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def get_queryable_fields(self) -> List[str]:
-        """
-        Gets the list of metadata keys that are designated as queryable.
-        Returns:
-            A list of strings representing the queryable field names.
-        """
-        raise NotImplementedError
-
-    @abc.abstractmethod
-    def get_records_by_status(self, status: FileStatus) -> List[FileRecord]:
-        """Retrieves all FileRecords with the specified status."""
-        raise NotImplementedError
 
 
 # --- Concrete Repository Implementation ---
@@ -116,7 +55,7 @@ class DocumentRepository(AbstractDocumentRepository):
             # to handle rollbacks appropriately.
             raise
 
-    def get_by_id(self, record_id: uuid.UUID) -> Optional[FileRecord]:
+    def get(self, record_id: uuid.UUID) -> Optional[FileRecord]:
         """Retrieves a FileRecord by its UUID."""
         log.debug("Fetching record by ID", record_id=record_id)
         try:
@@ -131,6 +70,18 @@ class DocumentRepository(AbstractDocumentRepository):
             log.exception(
                 "Error fetching record by ID", record_id=record_id, error=str(e)
             )
+            raise
+
+    def list(self) -> List[FileRecord]:
+        """Retrieves all FileRecord entities from the repository."""
+        log.debug("Fetching all records")
+        try:
+            statement = select(FileRecord)
+            results = self.session.exec(statement).all()
+            log.info("Fetched all records", count=len(results))
+            return list(results)
+        except Exception as e:
+            log.exception("Error fetching all records", error=str(e))
             raise
 
     def exists_by_source_path(self, source_path: str) -> bool:
@@ -165,7 +116,9 @@ class DocumentRepository(AbstractDocumentRepository):
             # Re-raising is generally safer as it indicates an unexpected error.
             raise
 
-    def find_by_metadata(self, filters: Dict[str, Any]) -> List[FileRecord]:
+    def find_by_metadata(
+        self, filters: Dict[str, Any], limit: int | None = None
+    ) -> List[FileRecord]:
         """
         Finds records by matching key-value pairs in the meta_data JSON field.
 
@@ -173,10 +126,11 @@ class DocumentRepository(AbstractDocumentRepository):
             filters: A dictionary where keys are metadata field names
                      and values are the values to filter by.
                      Currently assumes string comparison for values.
+            limit: Optional maximum number of records to return.
         Returns:
             A list of matching FileRecord objects.
         """
-        log.debug("Finding records by metadata filters", filters=filters)
+        log.debug("Finding records by metadata filters", filters=filters, limit=limit)
         try:
             statement = select(FileRecord)
             conditions = []
@@ -200,9 +154,13 @@ class DocumentRepository(AbstractDocumentRepository):
                 # Apply all conditions using 'and_'
                 statement = statement.where(and_(*conditions))
 
+            # Apply limit if provided
+            if limit is not None:
+                statement = statement.limit(limit)
+
             # Execute with the combined parameters using session.execute
             results = self.session.execute(statement, params_dict).scalars().all()
-            log.info("Found records by metadata", count=len(results), filters=filters)
+            log.info("Found records by metadata", count=len(results), filters=filters, limit=limit)
             return list(results)
         except Exception as e:
             log.exception(

@@ -76,7 +76,7 @@ def test_get_by_id_exists(session: Session, repo: DocumentRepository):
     session.add(record)  # Add directly to session for setup
     session.commit()
 
-    retrieved_record = repo.get_by_id(record_id)
+    retrieved_record = repo.get(record_id)
 
     assert retrieved_record is not None
     assert retrieved_record.id == record_id
@@ -86,7 +86,7 @@ def test_get_by_id_exists(session: Session, repo: DocumentRepository):
 def test_get_by_id_not_exists(repo: DocumentRepository):
     """Test retrieving a non-existent record by ID returns None."""
     non_existent_id = uuid.uuid4()
-    retrieved_record = repo.get_by_id(non_existent_id)
+    retrieved_record = repo.get(non_existent_id)
     assert retrieved_record is None
 
 
