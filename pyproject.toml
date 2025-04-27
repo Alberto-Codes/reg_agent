@@ -23,6 +23,7 @@ dependencies = [
     "types-beautifulsoup4>=4.12.0.20250204",
     "types-lxml>=2025.3.30",
     "types-requests>=2.32.0.20250328",
+    "torch>=2.0.0",
 ]
 
 [project.scripts]

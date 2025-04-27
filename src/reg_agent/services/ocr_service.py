@@ -3,16 +3,24 @@ Service for extracting text from documents using the Docling library.
 """
 
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Optional
 
 import structlog
-from docling.datamodel.base_models import ConversionStatus
+from docling.datamodel.base_models import ConversionStatus, InputFormat
+
+# Import accelerator and pipeline options
+from docling.datamodel.pipeline_options import (
+    AcceleratorDevice,
+    AcceleratorOptions,
+    PdfPipelineOptions,
+)
 
 # Removed unused DoclingDocument import for now
 # from docling.datamodel.document import DoclingDocument
-from docling.document_converter import DocumentConverter
+from docling.document_converter import DocumentConverter, PdfFormatOption
 
 # Configure logger
 log = structlog.get_logger()
@@ -22,13 +30,61 @@ class OcrService:
     """A service class to handle text extraction from documents using Docling."""
 
     def __init__(self) -> None:
-        """Initializes the OcrService and the Docling DocumentConverter."""
+        """Initializes the OcrService and the Docling DocumentConverter.
+
+        Attempts to configure accelerator options based on available hardware.
+        """
         self.converter: Optional[DocumentConverter] = None
         try:
-            self.converter = DocumentConverter()
-            log.debug("OcrService: DocumentConverter initialized successfully.")
+            # --- Accelerator Configuration ---
+            num_threads = os.cpu_count() or 4  # Default to 4 if cpu_count fails
+            device = AcceleratorDevice.CPU  # Default to CPU
+
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    device = AcceleratorDevice.CUDA
+                    log.info(
+                        "OcrService: CUDA available, setting accelerator device to CUDA."
+                    )
+                else:
+                    log.info(
+                        "OcrService: CUDA not available, using CPU accelerator."
+                    )
+            except ImportError:
+                log.info(
+                    "OcrService: torch not found, defaulting to CPU accelerator."
+                )
+
+            accelerator_options = AcceleratorOptions(
+                num_threads=num_threads, device=device
+            )
+
+            pdf_pipeline_options = PdfPipelineOptions(
+                accelerator_options=accelerator_options,
+                do_ocr=True,  # Explicitly enable OCR
+                # Add other options like table structure if needed later
+                # do_table_structure=True,
+                # table_structure_options=TableStructureOptions(do_cell_matching=True)
+            )
+
+            # --- Initialize DocumentConverter with specific options ---
+            self.converter = DocumentConverter(
+                format_options={
+                    InputFormat.PDF: PdfFormatOption(
+                        pipeline_options=pdf_pipeline_options,
+                    )
+                }
+            )
+            log.info(
+                "OcrService: DocumentConverter initialized successfully.",
+                accelerator_device=device.value,
+                num_threads=num_threads,
+            )
+
         except Exception as e:
-            # Log the specific exception
+            # Log the specific exception during initialization
             log.exception(
                 "OcrService: Failed to initialize DocumentConverter.", error=str(e)
             )
@@ -65,16 +121,15 @@ class OcrService:
         markdown_text: Optional[str] = None
 
         try:
-            results = self.converter.convert_all([file_path], raises_on_error=False)
+            results = self.converter.convert_all([file_path])
+            # Use next() to get the single item from the generator
+            conv_result = next(results, None) # Use None as default if generator is empty
 
-            if not results:
-                log.error(
-                    "OcrService: No conversion result from Docling.",
-                    path=str(file_path),
+            if conv_result is None:
+                log.warning(
+                    "OcrService: Conversion returned no result.", path=str(file_path)
                 )
-                return None
-
-            conv_result = results[0]
+                return None # Explicitly return None if no result
 
             if conv_result.status == ConversionStatus.SUCCESS and conv_result.document:
                 markdown_text = conv_result.document.export_to_markdown()
