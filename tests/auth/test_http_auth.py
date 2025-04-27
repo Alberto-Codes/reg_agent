@@ -24,8 +24,8 @@ def test_dynamic_bearer_auth_flow():
 
     # Assert
     mock_token_manager.get_token.assert_called_once()
-    assert "authorization" in updated_request.headers
-    assert updated_request.headers["authorization"] == f"Bearer {mock_token}"
+    assert "Authorization" in updated_request.headers
+    assert updated_request.headers["Authorization"] == f"Bearer {mock_token}"
 
     # Ensure the generator is exhausted (optional good practice)
     with pytest.raises(StopIteration):

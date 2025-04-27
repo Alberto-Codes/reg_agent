@@ -1,7 +1,12 @@
 import logging
+from pathlib import Path
+from typing import Generator
 
 import pytest
 import structlog
+from sqlalchemy.engine import Engine
+
+from reg_agent.core.db import connection as db_connection
 
 
 @pytest.fixture(autouse=True)
@@ -64,3 +69,25 @@ def configure_structlog_for_pytest():
     # Optional: Clean up handlers after the test if necessary
     # structlog.reset_defaults() # Reset again if needed
     # root_logger.removeHandler(handler) # Remove the handler we added
+
+
+# --- Added DB Fixtures ---
+
+@pytest.fixture(scope="function")  # Use function scope for isolation
+def test_db_path(tmp_path: Path) -> Path:
+    """Provides a temporary path for the test database."""
+    return tmp_path / "test_regulations.db"
+
+
+@pytest.fixture
+def test_engine(tmp_path: Path) -> Generator[Engine, None, None]:
+    """Provides a clean SQLAlchemy engine usable across different test modules."""
+    db_file = tmp_path / "test_regulations.db"
+    # Ensure global engine state is reset for each test run using this fixture
+    db_connection._sync_engine = None
+    engine = db_connection.get_engine(db_file=db_file)
+    db_connection.create_db_and_tables(engine)
+    yield engine
+    # Clean up? DuckDB file is in tmp_path, should be auto-cleaned
+    db_connection._sync_engine = None  # Explicitly clear after test
+    engine.dispose()

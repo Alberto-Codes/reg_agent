@@ -6,33 +6,11 @@ from typing import Generator
 import pytest
 from sqlalchemy import inspect as sql_inspect  # Renamed to avoid naming conflict
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel
 
 # Module to test
 from reg_agent.core.db import connection as db_connection
 from reg_agent.core.db.models import FileRecord
-
-
-# Define a fixture scope for the engine to avoid recreating it for every test function
-# Use module scope if engine creation is expensive and tests don't interfere
-@pytest.fixture(scope="function")  # Use function scope for isolation
-def test_db_path(tmp_path: Path) -> Path:
-    """Provides a temporary path for the test database."""
-    return tmp_path / "test_regulations.db"
-
-
-@pytest.fixture
-def test_engine(tmp_path: Path) -> Engine:
-    db_file = tmp_path / "test_regulations.db"
-    # Ensure global engine state is reset for each test run using this fixture
-    db_connection._sync_engine = None
-    engine = db_connection.get_engine(db_file=db_file)
-    db_connection.create_db_and_tables(engine)
-    yield engine
-    # Clean up? DuckDB file is in tmp_path, should be auto-cleaned
-    db_connection._sync_engine = None  # Explicitly clear after test
-    engine.dispose()
 
 
 def test_get_db_url(test_db_path: Path):
@@ -265,11 +243,11 @@ def test_get_session_engine_none(mocker, caplog):
 
 @pytest.fixture(scope="function")
 def db_session(db_engine: Engine) -> Generator[Session, None, None]:
-    """Provides a clean SQLAlchemy Session for each test function."""
-    session_local = sessionmaker(autocommit=False, autoflush=False, bind=db_engine)
-    session = session_local()
+    """Provides a clean SQLModel Session for each test function."""
+    # Create SQLModel session directly
+    session = Session(db_engine)
     try:
-        yield session  # Explicitly yield the session
+        yield session  # Yield the SQLModel session
         session.commit()  # Commit transaction if test was successful
     except Exception:
         session.rollback()  # Rollback if test failed

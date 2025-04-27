@@ -13,12 +13,12 @@ from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from reg_agent.auth.http_auth import (
-    DynamicBearerAuth,  # type: ignore[import-not-found] # Import from new location
+    DynamicBearerAuth,
 )
 
 # --- Internal Imports ---
 from reg_agent.auth.token_manager import (
-    ImpersonatedTokenManager,  # type: ignore[import-not-found]
+    ImpersonatedTokenManager,
 )
 from reg_agent.config import (
     BASE_URL,
@@ -27,7 +27,7 @@ from reg_agent.config import (
     log,
 )  # Remove unused type: ignore
 from reg_agent.schemas.metadata import (
-    RegulationDocumentMetadata,  # type: ignore[import-not-found] # Import schema
+    RegulationDocumentMetadata,
 )
 
 # --- Constants --- #
