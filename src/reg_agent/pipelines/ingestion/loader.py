@@ -187,12 +187,12 @@ if __name__ == "__main__":  # pragma: no cover
     log.info("Setting up example files...", source_dir=str(EXAMPLE_DIR))
     # --- Rest of the example setup ---
     dummy_file = EXAMPLE_DIR / "my_test_file.txt"
-    dummy_file.write_text("This is the content of the test file.\\n")
+    dummy_file.write_text("This is the content of the test file.\n")
 
     sub_dir = EXAMPLE_DIR / "subdir"
     sub_dir.mkdir(exist_ok=True)
     dummy_file_2 = sub_dir / "another_file.log"
-    dummy_file_2.write_text("Log line 1\\nLog line 2")
+    dummy_file_2.write_text("Log line 1\nLog line 2")
 
     # Assume a dummy PDF exists at EXAMPLE_DIR / "dummy.pdf" for a full test.
     # You would need to place one there manually or generate it.
