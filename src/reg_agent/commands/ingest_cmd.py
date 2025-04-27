@@ -3,6 +3,7 @@ from pathlib import Path
 import structlog
 import typer
 from typing_extensions import Annotated
+import asyncio
 
 from reg_agent.core.db.connection import DEFAULT_DB_FILE
 from reg_agent.pipelines.ingestion.loader import ingest_files
@@ -81,7 +82,8 @@ def run_ingestion(
             )
 
     try:
-        ingest_files(source_dir=source_dir, db_file=db_path)
+        # Run the async ingest_files function synchronously
+        asyncio.run(ingest_files(source_dir=source_dir, db_file=db_path))
         log.info("Ingestion command finished.")
     except Exception as e:
         log.exception("Ingestion process failed unexpectedly.", error=str(e))
