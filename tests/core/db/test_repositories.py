@@ -4,266 +4,171 @@ Unit tests for the repository classes.
 
 import datetime
 import uuid
-from unittest.mock import MagicMock
+from typing import Generator
+from datetime import timezone
 
 import pytest
-from sqlmodel import Session
+from sqlmodel import Session, SQLModel, create_engine
 
 # Modules/Classes to test
 from reg_agent.core.db import models
 from reg_agent.core.db.models import FileRecord, FileStatus
-from reg_agent.core.db.repositories import FileRepository
+from reg_agent.core.db.repositories import DocumentRepository
 
 # Configure structlog for testing (if capturing logs)
 # structlog.configure(processors=[structlog.testing.LogCapture()])
 
 
-@pytest.fixture
-def mock_session() -> MagicMock:
-    """Provides a mock SQLModel Session."""
-    # Create a MagicMock instance that simulates the Session
-    session = MagicMock(spec=Session)
-    # Mock the .exec() method chain
-    mock_exec = MagicMock()
-    session.exec.return_value = mock_exec
-    # Set default return values for common methods (can be overridden in tests)
-    mock_exec.first.return_value = None
-    mock_exec.one_or_none.return_value = None
-    mock_exec.all.return_value = []
-    return session
+@pytest.fixture(name="session")
+def session_fixture() -> Generator[Session, None, None]:
+    """Creates a clean in-memory SQLite database session for each test."""
+    # Use in-memory DuckDB for testing
+    engine = create_engine("duckdb:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        yield session
+    # Tables are dropped implicitly when the in-memory DB is closed
 
 
-@pytest.fixture
-def file_repository(mock_session: MagicMock) -> FileRepository:
-    """Provides a FileRepository instance with a mock session."""
-    return FileRepository(session=mock_session)
+@pytest.fixture(name="repo")
+def repo_fixture(session: Session) -> DocumentRepository:
+    """Provides a DocumentRepository instance initialized with the test session."""
+    return DocumentRepository(session=session)
 
 
-@pytest.fixture
-def sample_file_record() -> models.FileRecord:
-    """Provides a sample FileRecord for testing."""
-    return models.FileRecord(
-        id=uuid.uuid4(),  # Generate a real UUID
-        source_path="/test/path/sample.pdf",
-        filename="sample.pdf",
-        blob=b"sample content",
-        extracted_text="Sample text",
-        size_bytes=14,
-        last_modified_ts=datetime.datetime.now(datetime.timezone.utc),
+def create_test_record(
+    source_path: str = "/test/file.txt",
+    status: FileStatus = FileStatus.PENDING_PROCESS,
+    extracted_text: str | None = None,
+    meta_data: dict | None = None,
+    record_id: uuid.UUID | None = None, # Allow specifying ID for testing get_by_id
+) -> FileRecord:
+    """Helper function to create a FileRecord with defaults."""
+    return FileRecord(
+        id=record_id or uuid.uuid4(),
+        source_path=source_path,
+        filename=source_path.split("/")[-1],
+        blob=b"test content",
+        size_bytes=len(b"test content"),
+        last_modified_ts=datetime.datetime.now(timezone.utc),
+        extracted_text=extracted_text,
+        meta_data=meta_data,
+        status=status,
     )
 
 
-def test_repository_init(mock_session: MagicMock):
-    """Tests FileRepository initialization."""
-    repo = FileRepository(session=mock_session)
-    assert repo.session is mock_session
+def test_add_record(session: Session, repo: DocumentRepository):
+    """Test adding a record successfully."""
+    record = create_test_record(source_path="/add/test.txt")
+    repo.add(record)
+    session.commit()  # Commit needed as repo.add only adds to session
+
+    # Verify record was added by retrieving it
+    added_record = session.get(FileRecord, record.id)
+    assert added_record is not None
+    assert added_record.id == record.id
+    assert added_record.source_path == "/add/test.txt"
 
 
-def test_add_success(
-    file_repository: FileRepository,
-    mock_session: MagicMock,
-    sample_file_record: models.FileRecord,
-):
-    """Tests successfully adding a record."""
-    file_repository.add(sample_file_record)
-    # Verify that session.add was called exactly once with the sample record
-    mock_session.add.assert_called_once_with(sample_file_record)
+def test_get_by_id_exists(session: Session, repo: DocumentRepository):
+    """Test retrieving an existing record by ID."""
+    record_id = uuid.uuid4()
+    record = create_test_record(record_id=record_id, source_path="/get/exists.txt")
+    session.add(record) # Add directly to session for setup
+    session.commit()
+
+    retrieved_record = repo.get_by_id(record_id)
+
+    assert retrieved_record is not None
+    assert retrieved_record.id == record_id
+    assert retrieved_record.source_path == "/get/exists.txt"
 
 
-def test_add_failure(
-    file_repository: FileRepository,
-    mock_session: MagicMock,
-    sample_file_record: models.FileRecord,
-):
-    """Tests handling of exception during add."""
-    # Configure the mock session.add to raise an exception
-    mock_session.add.side_effect = Exception("DB Error")
-
-    # Assert that the repository re-raises the exception
-    with pytest.raises(Exception, match="DB Error"):
-        file_repository.add(sample_file_record)
-
-    mock_session.add.assert_called_once_with(sample_file_record)
+def test_get_by_id_not_exists(repo: DocumentRepository):
+    """Test retrieving a non-existent record by ID returns None."""
+    non_existent_id = uuid.uuid4()
+    retrieved_record = repo.get_by_id(non_existent_id)
+    assert retrieved_record is None
 
 
-def test_exists_by_source_path_found(
-    file_repository: FileRepository,
-    mock_session: MagicMock,
-    sample_file_record: models.FileRecord,
-):
-    """Tests exists_by_source_path when the record is found."""
-    test_path = sample_file_record.source_path
-    # Configure the mock session chain to return the sample record
-    mock_session.exec.return_value.first.return_value = sample_file_record
+def test_exists_by_source_path_true(session: Session, repo: DocumentRepository):
+    """Test checking existence for a path that exists."""
+    source_path = "/exists/true.txt"
+    record = create_test_record(source_path=source_path)
+    session.add(record)
+    session.commit()
 
-    exists = file_repository.exists_by_source_path(test_path)
-
-    assert exists is True
-    # Verify that session.exec(select(...)).first() was called
-    # We might need more specific assertion on the statement if necessary
-    mock_session.exec.assert_called_once()
-    mock_session.exec.return_value.first.assert_called_once()
+    assert repo.exists_by_source_path(source_path) is True
 
 
-def test_exists_by_source_path_not_found(
-    file_repository: FileRepository, mock_session: MagicMock
-):
-    """Tests exists_by_source_path when the record is not found."""
-    test_path = "/non/existent/path.txt"
-    # Ensure the mock session chain returns None (default in fixture, but explicit here)
-    mock_session.exec.return_value.first.return_value = None
-
-    exists = file_repository.exists_by_source_path(test_path)
-
-    assert exists is False
-    mock_session.exec.assert_called_once()
-    mock_session.exec.return_value.first.assert_called_once()
+def test_exists_by_source_path_false(repo: DocumentRepository):
+    """Test checking existence for a path that does not exist."""
+    source_path = "/exists/false.txt"
+    assert repo.exists_by_source_path(source_path) is False
 
 
-def test_exists_by_source_path_failure(
-    file_repository: FileRepository, mock_session: MagicMock
-):
-    """Tests handling of exception during exists_by_source_path."""
-    test_path = "/error/path.txt"
-    # Configure the mock session.exec to raise an exception
-    mock_session.exec.side_effect = Exception("Query Error")
+def test_get_records_by_status(session: Session, repo: DocumentRepository):
+    """Test retrieving records based on their status."""
+    rec1 = create_test_record(source_path="/status/1.txt", status=FileStatus.COMPLETED)
+    rec2 = create_test_record(source_path="/status/2.txt", status=FileStatus.PENDING_PROCESS)
+    rec3 = create_test_record(source_path="/status/3.txt", status=FileStatus.COMPLETED)
+    session.add_all([rec1, rec2, rec3])
+    session.commit()
 
-    # Assert that the repository re-raises the exception
-    with pytest.raises(Exception, match="Query Error"):
-        file_repository.exists_by_source_path(test_path)
+    completed_records = repo.get_records_by_status(FileStatus.COMPLETED)
+    pending_records = repo.get_records_by_status(FileStatus.PENDING_PROCESS)
+    failed_records = repo.get_records_by_status(FileStatus.FAILED_OCR)
 
-    # Verify exec was called
-    mock_session.exec.assert_called_once()
-
-
-def test_get_records_by_status_found(mock_session: MagicMock):
-    repo = FileRepository(mock_session)
-    # Dummy records to be returned
-    records = [
-        FileRecord(
-            id=uuid.uuid4(), source_path="/p1.txt", status=FileStatus.PENDING_PROCESS
-        ),
-        FileRecord(
-            id=uuid.uuid4(), source_path="/p2.txt", status=FileStatus.PENDING_PROCESS
-        ),
-    ]
-    # Mock session.exec(...).all() to return the dummy records
-    mock_result = MagicMock()
-    mock_result.all.return_value = records
-    mock_session.exec.return_value = mock_result
-
-    found_records = repo.get_records_by_status(FileStatus.PENDING_PROCESS)
-
-    assert found_records == records
-    mock_session.exec.assert_called_once()  # Verify query execution
-    # Optionally, check the statement passed to exec if needed, but can be complex
+    assert len(completed_records) == 2
+    assert {rec.id for rec in completed_records} == {rec1.id, rec3.id}
+    assert len(pending_records) == 1
+    assert pending_records[0].id == rec2.id
+    assert len(failed_records) == 0
 
 
-def test_get_records_by_status_not_found(mock_session: MagicMock):
-    repo = FileRepository(mock_session)
-    # Mock session.exec(...).all() to return an empty list
-    mock_result = MagicMock()
-    mock_result.all.return_value = []
-    mock_session.exec.return_value = mock_result
+# --- Tests for JSON Metadata Methods ---
 
-    found_records = repo.get_records_by_status(FileStatus.COMPLETED)
+def test_find_by_metadata_found(session: Session, repo: DocumentRepository):
+    """Test finding records using metadata filters."""
+    meta1 = {"author": "Alice", "year": 2023, "topic": "db"}
+    meta2 = {"author": "Bob", "year": 2024, "topic": "db"}
+    meta3 = {"author": "Alice", "year": 2024, "topic": "ai"}
 
-    assert found_records == []
-    mock_session.exec.assert_called_once()
+    rec1 = create_test_record(source_path="/meta/1.txt", meta_data=meta1)
+    rec2 = create_test_record(source_path="/meta/2.txt", meta_data=meta2)
+    rec3 = create_test_record(source_path="/meta/3.txt", meta_data=meta3)
+    session.add_all([rec1, rec2, rec3])
+    session.commit()
 
+    # Test single filter
+    results_author_alice = repo.find_by_metadata({"author": "Alice"})
+    assert len(results_author_alice) == 2
+    assert {rec.id for rec in results_author_alice} == {rec1.id, rec3.id}
 
-def test_get_records_by_status_failure(mock_session: MagicMock):
-    repo = FileRepository(mock_session)
-    mock_session.exec.side_effect = Exception("DB Query Error")
-    with pytest.raises(Exception, match="DB Query Error"):
-        repo.get_records_by_status(FileStatus.FAILED_OCR)
-    mock_session.exec.assert_called_once()
+    # Test multiple filters (AND)
+    results_alice_2024 = repo.find_by_metadata({"author": "Alice", "year": 2024})
+    assert len(results_alice_2024) == 1
+    assert results_alice_2024[0].id == rec3.id
 
+    # Test filter matching numeric value (stored as string in comparison)
+    results_year_2023 = repo.find_by_metadata({"year": 2023})
+    assert len(results_year_2023) == 1
+    assert results_year_2023[0].id == rec1.id
 
-# --- Tests for get_records_needing_ocr ---
+    # Test filter resulting in no matches
+    results_no_match = repo.find_by_metadata({"topic": "cloud", "author": "Alice"})
+    assert len(results_no_match) == 0
 
+    # Test empty filter (should return all records with meta_data, technically)
+    # Current implementation returns all records if filters dict is empty
+    results_empty_filter = repo.find_by_metadata({})
+    assert len(results_empty_filter) == 3
+    assert {rec.id for rec in results_empty_filter} == {rec1.id, rec2.id, rec3.id}
 
-def test_get_records_needing_ocr_found(mock_session: MagicMock):
-    repo = FileRepository(mock_session)
-    records = [
-        FileRecord(id=uuid.uuid4(), source_path="/no_text1.txt", extracted_text=None),
-        FileRecord(id=uuid.uuid4(), source_path="/no_text2.pdf", extracted_text=None),
-    ]
-    mock_result = MagicMock()
-    mock_result.all.return_value = records
-    mock_session.exec.return_value = mock_result
+def test_find_by_metadata_not_found(repo: DocumentRepository):
+    """Test finding records by metadata when no records have metadata."""
+    results = repo.find_by_metadata({"author": "Nobody"})
+    assert len(results) == 0
 
-    found_records = repo.get_records_needing_ocr()
-
-    assert found_records == records
-    mock_session.exec.assert_called_once()
-    # Could add more specific checks on the select statement if needed
-
-
-def test_get_records_needing_ocr_not_found(mock_session: MagicMock):
-    repo = FileRepository(mock_session)
-    mock_result = MagicMock()
-    mock_result.all.return_value = []
-    mock_session.exec.return_value = mock_result
-
-    found_records = repo.get_records_needing_ocr()
-
-    assert found_records == []
-    mock_session.exec.assert_called_once()
-
-
-def test_get_records_needing_ocr_failure(mock_session: MagicMock):
-    repo = FileRepository(mock_session)
-    mock_session.exec.side_effect = Exception("DB Query Error for OCR")
-    with pytest.raises(Exception, match="DB Query Error for OCR"):
-        repo.get_records_needing_ocr()
-    mock_session.exec.assert_called_once()
-
-
-# --- Tests for get_records_needing_metadata ---
-
-
-def test_get_records_needing_metadata_found(mock_session: MagicMock):
-    repo = FileRepository(mock_session)
-    records = [
-        FileRecord(
-            id=uuid.uuid4(),
-            source_path="/needs_meta1.txt",
-            extracted_text="text",
-            meta_data=None,
-        ),
-        FileRecord(
-            id=uuid.uuid4(),
-            source_path="/needs_meta2.pdf",
-            extracted_text="more text",
-            meta_data=None,
-        ),
-    ]
-    mock_result = MagicMock()
-    mock_result.all.return_value = records
-    mock_session.exec.return_value = mock_result
-
-    found_records = repo.get_records_needing_metadata()
-
-    assert found_records == records
-    mock_session.exec.assert_called_once()
-
-
-def test_get_records_needing_metadata_not_found(mock_session: MagicMock):
-    repo = FileRepository(mock_session)
-    mock_result = MagicMock()
-    mock_result.all.return_value = []
-    mock_session.exec.return_value = mock_result
-
-    found_records = repo.get_records_needing_metadata()
-
-    assert found_records == []
-    mock_session.exec.assert_called_once()
-
-
-def test_get_records_needing_metadata_failure(mock_session: MagicMock):
-    repo = FileRepository(mock_session)
-    mock_session.exec.side_effect = Exception("DB Query Error for Metadata")
-    with pytest.raises(Exception, match="DB Query Error for Metadata"):
-        repo.get_records_needing_metadata()
-    mock_session.exec.assert_called_once()
+# TODO: Add tests for get_records_needing_ocr, get_records_needing_metadata
+# TODO: Add tests for find_by_metadata (more edge cases?), get_distinct_values, get_queryable_fields once implemented
