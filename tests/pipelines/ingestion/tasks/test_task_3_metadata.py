@@ -118,7 +118,7 @@ async def test_run_task_3_success(
     assert success == 2
     assert errors == 0
     mock_repo_instance.get_records_by_status.assert_called_once_with(
-        FileStatus.PENDING_METADATA
+        [FileStatus.PENDING_METADATA, FileStatus.FAILED_METADATA]
     )
     assert mock_metadata_service.extract_metadata.call_count == 2
 
@@ -159,6 +159,11 @@ async def test_run_task_3_no_records_found(
     mock_uow_class.return_value.__enter__.assert_called_once()
     mock_uow_class.return_value.__exit__.assert_called_once()
 
+    # Check that the repo method was still called with the correct statuses
+    mock_repo_instance.get_records_by_status.assert_called_once_with(
+        [FileStatus.PENDING_METADATA, FileStatus.FAILED_METADATA]
+    )
+
 
 @pytest.mark.asyncio
 async def test_run_task_3_no_extracted_text(
@@ -183,6 +188,11 @@ async def test_run_task_3_no_extracted_text(
         pending_metadata_records[
             1
         ].extracted_text  # Called only with text from record 2
+    )
+
+    # Check that the repo method was called with the correct statuses
+    mock_repo_instance.get_records_by_status.assert_called_once_with(
+        [FileStatus.PENDING_METADATA, FileStatus.FAILED_METADATA]
     )
 
     # Check final status of records
@@ -223,6 +233,11 @@ async def test_run_task_3_metadata_extraction_returns_none(
     mock_uow_class.return_value.__enter__.assert_called_once()
     mock_uow_class.return_value.__exit__.assert_called_once()
 
+    # Check that the repo method was called with the correct statuses
+    mock_repo_instance.get_records_by_status.assert_called_once_with(
+        [FileStatus.PENDING_METADATA, FileStatus.FAILED_METADATA]
+    )
+
 
 @pytest.mark.asyncio
 async def test_run_task_3_metadata_extraction_exception(
@@ -250,6 +265,11 @@ async def test_run_task_3_metadata_extraction_exception(
     mock_uow_class.assert_called_once()
     mock_uow_class.return_value.__enter__.assert_called_once()
     mock_uow_class.return_value.__exit__.assert_called_once()
+
+    # Check that the repo method was called with the correct statuses
+    mock_repo_instance.get_records_by_status.assert_called_once_with(
+        [FileStatus.PENDING_METADATA, FileStatus.FAILED_METADATA]
+    )
 
 
 @pytest.mark.asyncio

@@ -125,7 +125,7 @@ class DocumentRepository(AbstractDocumentRepository):
         Args:
             filters: A dictionary where keys are metadata field names
                      and values are the values to filter by.
-                     Currently assumes string comparison for values.
+                     Supports string, numeric, and boolean filter values.
             limit: Optional maximum number of records to return.
         Returns:
             A list of matching FileRecord objects.
@@ -141,13 +141,31 @@ class DocumentRepository(AbstractDocumentRepository):
                 # Use unique param names for each condition
                 param_key_name = f"key_{i}"
                 param_value_name = f"value_{i}"
-                # Use DuckDB's json_extract_string via text()
+
+                # Determine the appropriate JSON extraction function based on the value type
+                if isinstance(value, str):
+                    extraction_function = "json_extract_string"
+                elif isinstance(value, (int, float, bool)):
+                    extraction_function = "json_extract"
+                else:
+                    # Optional: Handle other types or raise an error
+                    log.warning(
+                        "Unsupported filter value type, attempting string extraction.",
+                        key=key,
+                        type=type(value),
+                    )
+                    # Fallback to string extraction might be desired in some cases,
+                    # or raise ValueError(f"Unsupported filter value type: {type(value)}")
+                    extraction_function = "json_extract_string"
+                    value = str(value) # Coerce if falling back to string
+
+                # Use DuckDB's json_extract/json_extract_string via text()
                 condition = text(
-                    f"json_extract_string(meta_data, :{param_key_name}) = :{param_value_name}"
+                    f"{extraction_function}(meta_data, :{param_key_name}) = :{param_value_name}"
                 )
                 conditions.append(condition)
                 params_dict[param_key_name] = f"$.{key}"
-                params_dict[param_value_name] = str(value)
+                params_dict[param_value_name] = value  # Pass the original value
                 i += 1
 
             if conditions:
@@ -229,7 +247,7 @@ class DocumentRepository(AbstractDocumentRepository):
         if isinstance(status, list):
             status_values = [s.value for s in status]
             log.debug("Fetching records by list of statuses", statuses=status_values)
-            statement = select(FileRecord).where(FileRecord.status.in_(status_values))
+            statement = select(FileRecord).where(FileRecord.status.in_(status_values))  # Use ColumnOperators.in_
         else:
             log.debug("Fetching records by status", status=status.value)
             statement = select(FileRecord).where(FileRecord.status == status)

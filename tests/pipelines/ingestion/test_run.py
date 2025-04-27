@@ -129,8 +129,8 @@ def test_run_pipeline_success(mock_dependencies):
     mock_create_db.assert_called_once_with(mock_engine)
 
     # Check task calls
-    mock_t1.assert_called_once_with(mock_engine, source_path_instance)
-    mock_t2.assert_called_once_with(mock_engine)
+    mock_t1.assert_called_once_with(source_path_instance)
+    mock_t2.assert_called_once_with()
     mock_asyncio_run.assert_called_once()
 
     # Check logging
@@ -248,7 +248,7 @@ def test_run_pipeline_task1_fails(mock_dependencies):
     run_ingestion_pipeline(source_dir=Path(MOCK_SOURCE_DIR))
 
     source_path_instance.is_dir.assert_called_once()
-    mock_t1.assert_called_once_with(mock_engine, source_path_instance)
+    mock_t1.assert_called_once_with(source_path_instance)
     mock_log.exception.assert_called_once_with(
         "An unexpected error occurred during pipeline execution.",
         error="Cannot read file",
@@ -273,13 +273,13 @@ def test_run_pipeline_task2_fails(mock_dependencies):
     run_ingestion_pipeline(source_dir=Path(MOCK_SOURCE_DIR))
 
     source_path_instance.is_dir.assert_called_once()
-    mock_t1.assert_called_once_with(mock_engine, source_path_instance)
-    mock_t2.assert_called_once_with(mock_engine)
+    mock_t1.assert_called_once_with(source_path_instance)
+    mock_t2.assert_called_once_with()
+    mock_asyncio_run.assert_not_called()
     mock_log.exception.assert_called_once_with(
         "An unexpected error occurred during pipeline execution.",
         error="OCR Engine unavailable",
     )
-    mock_asyncio_run.assert_not_called()
 
 
 def test_run_pipeline_task3_fails(mock_dependencies):
@@ -299,8 +299,8 @@ def test_run_pipeline_task3_fails(mock_dependencies):
     run_ingestion_pipeline(source_dir=Path(MOCK_SOURCE_DIR))
 
     source_path_instance.is_dir.assert_called_once()
-    mock_t1.assert_called_once_with(mock_engine, source_path_instance)
-    mock_t2.assert_called_once_with(mock_engine)
+    mock_t1.assert_called_once_with(source_path_instance)
+    mock_t2.assert_called_once_with()
     mock_asyncio_run.assert_called_once()
     mock_log.exception.assert_called_once_with(
         "An unexpected error occurred during pipeline execution.",
