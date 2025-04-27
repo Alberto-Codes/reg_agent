@@ -198,8 +198,8 @@ if __name__ == "__main__":  # pragma: no cover
     # You would need to place one there manually or generate it.
     # Example dummy PDF creation (requires reportlab):
     try:
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas # type: ignore
+        from reportlab.lib.pagesizes import letter # type: ignore
 
         dummy_pdf_path = EXAMPLE_DIR / "dummy.pdf"
         c = canvas.Canvas(str(dummy_pdf_path), pagesize=letter)
