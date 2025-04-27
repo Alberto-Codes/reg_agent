@@ -71,7 +71,7 @@ def run_ingestion_pipeline(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
         # --- Run Tasks Sequentially (Sync for T1, T2) --- #
 
         # Task 1: Create Records (Sync)
-        t1_inserted, t1_skipped, t1_errors = run_task_1(engine, source_dir)
+        t1_inserted, t1_skipped, t1_errors = run_task_1(source_dir)
         log.info(
             "Task 1 (Create Records) summary",
             inserted=t1_inserted,
@@ -82,7 +82,7 @@ def run_ingestion_pipeline(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
         # For now, continue even if some file reads failed.
 
         # Task 2: OCR (Sync)
-        t2_found, t2_success, t2_skipped, t2_errors = run_task_2(engine)
+        t2_found, t2_success, t2_skipped, t2_errors = run_task_2()
         log.info(
             "Task 2 (OCR) summary",
             found=t2_found,
@@ -95,7 +95,7 @@ def run_ingestion_pipeline(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
         # Task 3: Metadata Extraction (Async Call within Sync Orchestrator)
         # Run the async task 3 using asyncio.run() - It now handles its own service
         log.info("Starting Task 3 (Metadata) asynchronously...")
-        t3_found, t3_success, t3_errors = asyncio.run(run_task_3(engine))
+        t3_found, t3_success, t3_errors = asyncio.run(run_task_3())
         log.info(
             "Task 3 (Metadata) summary",
             found=t3_found,

@@ -217,19 +217,25 @@ class DocumentRepository(AbstractDocumentRepository):
         # TODO: Make this dynamic (e.g., from config or introspection) if needed
         return ["author", "title", "year", "topic", "case_number"]  # Example fields
 
-    def get_records_by_status(self, status: FileStatus) -> List[FileRecord]:
-        """Retrieves all FileRecords with the specified status."""
-        log.debug("Fetching records by status", status=status.value)
-        try:
+    def get_records_by_status(self, status: FileStatus | List[FileStatus]) -> List[FileRecord]:
+        """Retrieves all FileRecords with the specified status or list of statuses."""
+        if isinstance(status, list):
+            status_values = [s.value for s in status]
+            log.debug("Fetching records by list of statuses", statuses=status_values)
+            statement = select(FileRecord).where(FileRecord.status.in_(status_values))
+        else:
+            log.debug("Fetching records by status", status=status.value)
             statement = select(FileRecord).where(FileRecord.status == status)
+
+        try:
             results = self.session.exec(statement).all()
             log.info(
-                "Fetched records by status", status=status.value, count=len(results)
+                "Fetched records by status(es)", status_query=str(status), count=len(results)
             )
             return list(results)  # Ensure it's a list
         except Exception as e:
             log.exception(
-                "Error fetching records by status", status=status.value, error=str(e)
+                "Error fetching records by status(es)", status_query=str(status), error=str(e)
             )
             raise
 

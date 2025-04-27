@@ -42,9 +42,11 @@ async def run_task_3(): # Removed engine parameter
     try:
         # Wrap entire fetch and process logic in a single UoW
         with SqlModelUnitOfWork() as uow:
-            # Fetch records inside the UoW
+            # Fetch records inside the UoW - Include FAILED_METADATA for retry
+            statuses_to_process = [FileStatus.PENDING_METADATA, FileStatus.FAILED_METADATA]
+            log.info("Querying for records with statuses", statuses=statuses_to_process)
             records_to_process = uow.documents.get_records_by_status(
-                FileStatus.PENDING_METADATA
+                statuses_to_process # Pass list as positional argument
             )
             records_found = len(records_to_process)
             log.info(f"Task 3: Found {records_found} records for metadata extraction.")
