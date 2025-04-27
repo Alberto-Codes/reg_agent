@@ -1,32 +1,50 @@
 # src/reg_agent/services/metadata_service.py
-import asyncio
-import logging
-import os
-from typing import Optional, Type, cast
-
 import structlog
+import asyncio
+import os
+import logging
+import google.auth
+import google.auth.transport.requests
+from pydantic import BaseModel, Field
+from typing import Type, Optional, cast
+import httpx
 
 # For __main__ testing - load environment variables if available
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
 
-# Core pydantic-ai imports
+# --- Switch imports for OpenAI compatibility ---
 from pydantic_ai.agent import Agent
-from pydantic_ai.models.gemini import GeminiModel
-from pydantic_ai.providers.google_vertex import GoogleVertexProvider, VertexAiRegion
+# Use OpenAIModel and OpenAIProvider now
+from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.providers.openai import OpenAIProvider
 
 # --- Configuration Loading ---
 load_dotenv()
 log = structlog.get_logger()
 
-MODEL_NAME = os.getenv("VERTEX_MODEL_NAME", "gemini-1.5-flash-latest")
-PROJECT_ID = os.getenv("GCP_PROJECT_ID")
-REGION = os.getenv("GCP_REGION")
+# Model name needs publisher prefix (e.g., "google/gemini-1.5-flash-latest")
+_raw_model_name = os.getenv("VERTEX_MODEL_NAME", 'google/gemini-1.5-flash-latest') # Updated default
+if not _raw_model_name.startswith("google/"):
+    log.warning(
+        "VERTEX_MODEL_NAME provided without 'google/' prefix. Prepending.",
+        raw_name=_raw_model_name
+    )
+    MODEL_NAME = f"google/{_raw_model_name}"
+else:
+    MODEL_NAME = _raw_model_name
+
+# Base URL for the Vertex OpenAI-compatible endpoint is now required
+BASE_URL = os.getenv("VERTEX_OPENAI_ENDPOINT_URL")
+# API Key is no longer used directly for authentication
+# API_KEY = os.getenv("VERTEX_API_KEY", "None") # Default to string "None" as placeholder
 
 if not MODEL_NAME:
     # This is a critical configuration, raise error if missing
     log.error("VERTEX_MODEL_NAME environment variable is required but not set.")
     raise ValueError("VERTEX_MODEL_NAME must be set via environment variable.")
+if not BASE_URL:
+    log.error("VERTEX_OPENAI_ENDPOINT_URL environment variable is required but not set.")
+    raise ValueError("VERTEX_OPENAI_ENDPOINT_URL must be set via environment variable.")
 
 
 # --- Response Model ---
@@ -42,38 +60,61 @@ class BaseMetadata(BaseModel):
 # --- Service Definition ---
 class MetadataExtractionService:
     """
-    Service using pydantic-ai and Vertex AI Gemini (via ADC) for metadata extraction.
+    Service using pydantic-ai and Vertex AI Gemini via its OpenAI-compatible endpoint.
     Reads configuration from environment variables at module load time.
+    Uses Google Application Default Credentials (ADC) for authentication.
     """
 
     def __init__(self, output_type: Type[BaseModel] = BaseMetadata):
-        """Initializes the pydantic-ai Agent using module-level config."""
+        """Initializes the pydantic-ai Agent using OpenAI-compatible settings."""
         self.output_type = output_type
         log.info(
-            "Initializing MetadataExtractionService",
+            "Initializing MetadataExtractionService for OpenAI-compatible endpoint",
             model=MODEL_NAME,
-            project=PROJECT_ID or "default (ADC)",
-            region=REGION or "default (provider)",
+            base_url=BASE_URL,
+            auth_method="ADC", # Indicate ADC is being used
             output_type=self.output_type.__name__,
         )
         try:
-            # Explicitly pass arguments using keywords and cast region
-            if PROJECT_ID and REGION:
-                 provider = GoogleVertexProvider(project_id=PROJECT_ID, region=cast(VertexAiRegion, REGION))
-            elif PROJECT_ID:
-                 # Pass only project_id as keyword
-                 provider = GoogleVertexProvider(project_id=PROJECT_ID)
-            elif REGION:
-                 # Pass only region as keyword, casting it
-                 provider = GoogleVertexProvider(region=cast(VertexAiRegion, REGION))
-            else:
-                 # No keywords needed, uses defaults
-                 provider = GoogleVertexProvider()
+            # --- Start Authentication Logic ---
+            # Get application default credentials
+            credentials, project_id = google.auth.default(
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+            # Create a transport request object
+            auth_req = google.auth.transport.requests.Request()
+            # Refresh credentials to get the access token
+            credentials.refresh(auth_req)
 
-            llm = GeminiModel(MODEL_NAME, provider=provider)
+            if not credentials.token:
+                log.error("Failed to obtain access token from credentials.")
+                raise ValueError("Could not get ADC access token.")
+
+            log.debug("Obtained ADC token for authentication.")
+
+            # --- End Authentication Logic ---
+
+            # Instantiate OpenAIProvider passing ADC token as api_key
+            provider = OpenAIProvider(
+                api_key=credentials.token, # Pass ADC token as the API key
+                base_url=BASE_URL, # Keep base_url explicit
+                # http_client=http_client, # Remove client
+            )
+            # Use OpenAIModel with the specific Gemini model name and the provider
+            llm = OpenAIModel(
+                MODEL_NAME,  # Pass model name as positional argument
+                provider=provider,
+            )
             # Agent uses the specified llm and expects output matching output_type
-            self.agent = Agent(model=llm, output_type=self.output_type) # Keep ignore for now
-            log.info("Agent initialized successfully.")
+            self.agent = Agent(model=llm, output_type=self.output_type)
+            log.info("Agent initialized successfully for OpenAI-compatible endpoint.")
+        except google.auth.exceptions.DefaultCredentialsError as cred_err:
+            log.error(
+                "Failed to find Application Default Credentials (ADC). "
+                "Ensure you are authenticated (e.g., `gcloud auth application-default login`).",
+                exc_info=True
+            )
+            raise RuntimeError("MetadataExtractionService initialization failed due to missing ADC.") from cred_err
         except Exception as e:
             log.error("Failed to initialize pydantic-ai agent", exc_info=True)
             raise RuntimeError("MetadataExtractionService initialization failed") from e
@@ -106,7 +147,7 @@ class MetadataExtractionService:
 # --- Test Runner ---
 async def main_test():
     """Basic test function to run the service."""
-    log.info("Starting metadata service test...")
+    log.info("Starting metadata service test (OpenAI-compatible endpoint)...")
     try:
         # Initialize using global config, default output type
         service = MetadataExtractionService()
@@ -114,7 +155,7 @@ async def main_test():
         log.error("Failed to initialize service for testing.", error=str(e))
         return
 
-    sample_text = "This is a simple test document about cloud computing and AI."
+    sample_text = "This is a simple test document about cloud computing and AI via OpenAI endpoint."
     log.info("Running extraction test...", sample_text=sample_text)
     metadata_result = await service.extract_metadata(sample_text)
 
