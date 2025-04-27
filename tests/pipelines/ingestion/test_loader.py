@@ -389,3 +389,119 @@ def test_ingest_files_session_commit_error(
     # 4. Check error log for the session commit error
     assert "Database session/commit error during ingestion" in caplog.text
     assert "Simulated commit error" in caplog.text
+
+
+# --- New Tests for Error Conditions ---
+
+
+def test_ingest_files_ocr_service_unavailable(
+    tmp_path,
+    mock_db_init,
+    mock_session_context,
+    mock_file_repository,
+    mock_ocr_service,
+    caplog,
+):
+    """Test ingestion when OcrService converter is not initialized."""
+    source_dir = tmp_path / "source"
+    db_file = tmp_path / "test_ocr_unavailable.db"
+    _create_dummy_files(source_dir, [("file1.pdf", "pdf content")])
+
+    # Configure mocks
+    mock_ocr_service.converter = None  # Simulate init failure
+    mock_file_repository.exists_by_source_path.return_value = False
+
+    caplog.set_level("WARNING")
+    ingest_files(source_dir, db_file=db_file)
+
+    # --- Assertions ---
+    # 1. Check warning log
+    assert "OCR Service converter not initialized" in caplog.text
+
+    # 2. Check OCR was not called
+    mock_ocr_service.extract_markdown_from_file.assert_not_called()
+
+    # 3. Check FileRepository add was called (file should still be added without text)
+    mock_file_repository.add.assert_called_once()
+    added_record = mock_file_repository.add.call_args[0][0]
+    assert isinstance(added_record, FileRecord)
+    assert added_record.extracted_text is None
+
+
+def test_ingest_files_ocr_extraction_fails(
+    tmp_path,
+    mock_db_init,
+    mock_session_context,
+    mock_file_repository,
+    mock_ocr_service,
+    caplog,
+):
+    """Test ingestion when OcrService fails during extraction."""
+    source_dir = tmp_path / "source"
+    db_file = tmp_path / "test_ocr_fail.db"
+    pdf_paths = _create_dummy_files(source_dir, [("file1.pdf", "pdf content")])
+    pdf_path_str = str(pdf_paths[0])
+
+    # Configure mocks
+    mock_ocr_service.converter = True  # Service is available
+    mock_ocr_service.extract_markdown_from_file.side_effect = Exception(
+        "Simulated OCR Error"
+    )
+    mock_file_repository.exists_by_source_path.return_value = False
+
+    caplog.set_level("WARNING")
+    ingest_files(source_dir, db_file=db_file)
+
+    # --- Assertions ---
+    # 1. Check OCR was called (attempted)
+    mock_ocr_service.extract_markdown_from_file.assert_called_once_with(pdf_paths[0])
+
+    # 2. Check warning log
+    # Check caplog.text for core message and error due to issues checking caplog.records
+    assert "Failed to extract text from file" in caplog.text
+    assert "Simulated OCR Error" in caplog.text
+
+    # 3. Check FileRepository add was called (file added without text)
+    mock_file_repository.add.assert_called_once()
+    added_record = mock_file_repository.add.call_args[0][0]
+    assert isinstance(added_record, FileRecord)
+    assert added_record.source_path == pdf_path_str
+    assert added_record.extracted_text is None
+
+
+def test_ingest_files_os_error_reading_file(
+    tmp_path,
+    mock_db_init,
+    mock_session_context,
+    mock_file_repository,
+    mock_ocr_service,  # Still needed for setup
+    mocker,  # Need mocker to patch open
+    caplog,
+):
+    """Test handling OSError when opening/reading a file."""
+    source_dir = tmp_path / "source"
+    db_file = tmp_path / "test_os_error.db"
+    file_paths = _create_dummy_files(source_dir, [("file1.txt", "content")])
+
+    # Configure mocks
+    mock_file_repository.exists_by_source_path.return_value = False
+
+    # Patch built-in open to raise OSError
+    mock_open = mocker.patch(
+        "builtins.open", side_effect=OSError("Simulated permission denied")
+    )
+
+    caplog.set_level("ERROR")
+    ingest_files(source_dir, db_file=db_file)
+
+    # --- Assertions ---
+    # 1. Check open was called (attempted)
+    mock_open.assert_called_once_with(file_paths[0], "rb")
+
+    # 2. Check FileRepository add was NOT called
+    mock_file_repository.add.assert_not_called()
+
+    # 3. Check error log
+    # Check caplog.text for core message and error
+    assert "OS Error processing file" in caplog.text
+    assert "Simulated permission denied" in caplog.text
