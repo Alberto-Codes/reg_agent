@@ -100,3 +100,11 @@ log.info(
     target_sa=TARGET_SA_NAME_OR_EMAIL if TARGET_SA_NAME_OR_EMAIL else "(Direct ADC)",
     log_level=logging.getLevelName(root_logger.level) # Corrected function call
 )
+
+
+if __name__ == "__main__": # pragma: no cover
+    # Example of how to access and print the loaded config
+    print(f"Model Name: {MODEL_NAME}")
+    print(f"Base URL: {BASE_URL}")
+    print(f"Target SA: {TARGET_SA_NAME_OR_EMAIL or '(Direct ADC)'}")
+    print(f"Log Level: {logging.getLevelName(root_logger.level)}")
