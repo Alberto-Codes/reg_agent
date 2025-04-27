@@ -84,9 +84,10 @@ def get_session(engine: Optional[Engine] = None) -> Generator[Session, None, Non
         engine = get_engine()
         if engine is None:
             log.error("Engine is None, cannot create session.")
-            raise RuntimeError(
-                "Database engine is not initialized."
-            )  # Raise specific error
+            # Raise ValueError consistent with test expectation
+            raise ValueError(
+                "Database engine is not initialized. Call get_engine first."
+            )
 
     # Note: autocommit=False, autoflush=False are common defaults for Session
     session = Session(engine)

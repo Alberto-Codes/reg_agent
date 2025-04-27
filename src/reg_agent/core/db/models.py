@@ -5,6 +5,7 @@ Defines the SQLModel ORM models for the database.
 import datetime
 from typing import Optional
 import uuid  # Import uuid
+from sqlalchemy import TIMESTAMP, Column  # Import TIMESTAMP and Column
 
 from sqlmodel import Field, SQLModel
 # Remove unused imports
@@ -30,8 +31,10 @@ class FileRecord(SQLModel, table=True):
     # Allow extracted_text to be None if OCR fails or not applicable
     extracted_text: Optional[str] = Field(default=None)
     size_bytes: int
-    # SQLModel/SQLAlchemy handle timezone-aware datetime
-    last_modified_ts: datetime.datetime
+    # Explicitly use timezone-aware TIMESTAMP via sa_column
+    last_modified_ts: datetime.datetime = Field(
+        sa_column=Column(TIMESTAMP(timezone=True))
+    )
 
     # Future potential fields (examples):
     # vector_embedding: Optional[List[float]] = Field(default=None)

@@ -60,3 +60,35 @@ exclude_lines = [
     "if 0:",
     "if __name__ == '__main__':" # Also exclude dunder main specifically
 ]
+
+[tool.pytest.ini_options]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+#    "-ra", # Display summary info for (s)skipped, (X)xfailed, (f)failed, (E)error
+    "-q", # Quieter output
+]
+# testpaths allows specifying directories for tests
+testpaths = [
+    "tests",
+]
+# python_files specifies the naming convention for test files
+python_files = "test_*.py"
+# python_classes specifies the naming convention for test classes
+python_classes = "Test*"
+# python_functions specifies the naming convention for test functions
+python_functions = "test_*"
+# log_cli enables live logging output during test runs
+log_cli = true
+log_cli_level = "INFO" # Set the default log level for CLI output
+log_cli_format = "%(levelname)-8s %(name)s:%(lineno)d %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\")",
+]
+
+# Example filterwarnings:
+# filterwarnings = [
+#     "ignore::DeprecationWarning",
+# ]
