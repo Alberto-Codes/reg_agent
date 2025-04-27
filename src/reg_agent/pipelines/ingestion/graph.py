@@ -14,7 +14,11 @@ from reg_agent.core.db.connection import create_db_and_tables, get_engine
 # Import the original task functions
 from reg_agent.pipelines.ingestion.tasks.task_1_create_records import run_task_1
 from reg_agent.pipelines.ingestion.tasks.task_2_ocr import run_task_2
-from reg_agent.pipelines.ingestion.tasks.task_3_metadata import run_task_3
+# Import the task function and its result type
+from reg_agent.pipelines.ingestion.tasks.task_3_metadata import (
+    Task3Result,
+    run_task_3,
+)
 
 log = structlog.get_logger()
 
@@ -27,7 +31,7 @@ class PipelineState:
     # Store results from each task here
     task_1_results: Optional[Tuple[int, int, int]] = None
     task_2_results: Optional[Tuple[int, int, int, int]] = None
-    task_3_results: Optional[Tuple[int, int, int]] = None
+    task_3_results: Optional[Task3Result] = None
     final_summary: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -38,7 +42,7 @@ class PipelineState:
 class Task1CreateRecordsNode(pg.BaseNode[PipelineState]):
     """Node to execute Task 1: Create Records."""
 
-    async def run(self, ctx: pg.GraphRunContext[PipelineState]) -> "Task2OcrNode":  # type: ignore
+    async def run(self, ctx: pg.GraphRunContext[PipelineState]) -> "Task2OcrNode":
         log.info(
             "Executing Task 1: Create Records", source_dir=str(ctx.state.source_dir)
         )
@@ -55,7 +59,7 @@ class Task1CreateRecordsNode(pg.BaseNode[PipelineState]):
 class Task2OcrNode(pg.BaseNode[PipelineState]):
     """Node to execute Task 2: OCR."""
 
-    async def run(self, ctx: pg.GraphRunContext[PipelineState]) -> "Task3MetadataNode":  # type: ignore
+    async def run(self, ctx: pg.GraphRunContext[PipelineState]) -> "Task3MetadataNode":
         log.info("Executing Task 2: OCR")
         found, success, skipped, errors = run_task_2()
         log.info(
@@ -78,18 +82,20 @@ class Task3MetadataNode(pg.BaseNode[PipelineState]):
 
     async def run(
         self, ctx: pg.GraphRunContext[PipelineState]
-    ) -> "AggregateResultsNode":  # type: ignore
+    ) -> "AggregateResultsNode":
         log.info("Executing Task 3: Metadata Extraction (async)")
-        found, success, errors = await run_task_3()
+        # Store the entire result dictionary
+        task_3_result_dict: Task3Result = await run_task_3()
         log.info(
             "Task 3 finished",
-            found=found,
-            success=success,
-            errors=errors,
+            found=task_3_result_dict["found"],
+            success=task_3_result_dict["success"],
+            errors=task_3_result_dict["errors"],
+            # Optionally log error details count or snippet here if needed
         )
-        ctx.state.task_3_results = (found, success, errors)
-        # if errors > 0:
-        #     log.warning("Task 3 encountered errors", count=errors)
+        ctx.state.task_3_results = task_3_result_dict
+        # if task_3_result_dict["errors"] > 0:
+        #     log.warning("Task 3 encountered errors", count=task_3_result_dict["errors"])
         # Transition to Aggregation
         return AggregateResultsNode()
 
@@ -107,7 +113,10 @@ class AggregateResultsNode(pg.BaseNode[PipelineState, None, Dict[str, Any]]):
         # Retrieve results stored in state
         t1_res = ctx.state.task_1_results or (0, 0, 0)
         t2_res = ctx.state.task_2_results or (0, 0, 0, 0)
-        t3_res = ctx.state.task_3_results or (0, 0, 0)
+        # Default Task 3 result if None
+        t3_res_dict = ctx.state.task_3_results or {
+            "found": 0, "success": 0, "errors": 0, "error_details": []
+        }
 
         results = {
             "task_1": {
@@ -121,7 +130,12 @@ class AggregateResultsNode(pg.BaseNode[PipelineState, None, Dict[str, Any]]):
                 "skipped": t2_res[2],
                 "errors": t2_res[3],
             },
-            "task_3": {"found": t3_res[0], "success": t3_res[1], "errors": t3_res[2]},
+            "task_3": {
+                "found": t3_res_dict["found"],
+                "success": t3_res_dict["success"],
+                "errors": t3_res_dict["errors"],
+                "error_details": t3_res_dict["error_details"], # Include error details
+            },
         }
         ctx.state.final_summary = results  # Store final summary in state too
         log.info("Pipeline results aggregated.", results=results)

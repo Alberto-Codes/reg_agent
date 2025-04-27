@@ -249,9 +249,9 @@ class DocumentRepository(AbstractDocumentRepository):
             log.debug("Fetching records by list of statuses", statuses=status_values)
             statement = select(FileRecord).where(
                 FileRecord.status.in_(status_values)
-            )  # Use ColumnOperators.in_
-        else:
-            log.debug("Fetching records by status", status=status.value)
+            )
+        elif isinstance(status, FileStatus):
+            log.debug("Fetching records by single status", status=status.value)
             statement = select(FileRecord).where(FileRecord.status == status)
 
         try:

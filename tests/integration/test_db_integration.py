@@ -133,12 +133,16 @@ def test_add_and_retrieve_file_record(db_engine: Engine):
             created_at = retrieved_record.created_at
             updated_at = retrieved_record.updated_at
 
-            # Convert to aware UTC if necessary
+            # Assert created_at is not None and is timezone-aware
+            assert created_at is not None, "created_at should not be None"
             created_at_aware = (
                 created_at.astimezone(datetime.timezone.utc)
                 if created_at.tzinfo is None
                 else created_at.astimezone(datetime.timezone.utc)
             )
+
+            # Check and assert updated_at is not None and is timezone-aware
+            assert updated_at is not None, "updated_at should not be None"
             updated_at_aware = (
                 updated_at.astimezone(datetime.timezone.utc)
                 if updated_at.tzinfo is None

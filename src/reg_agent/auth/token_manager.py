@@ -95,10 +95,10 @@ class ImpersonatedTokenManager:
 
         # Defensively ensure expiry is timezone-aware UTC
         if expiry_utc.tzinfo is None:
-            # If naive, assume it's UTC (common case for naive datetimes)
-            log.warning(
-                "Token expiry datetime was naive, assuming UTC.", expiry=expiry_utc
-            )
+            # If naive, assume it's UTC (common case for naive datetimes from google.auth)
+            # log.warning(
+            #     "Token expiry datetime was naive, assuming UTC.", expiry=expiry_utc
+            # )
             expiry_utc = expiry_utc.replace(tzinfo=datetime.timezone.utc)
         elif expiry_utc.tzinfo != datetime.timezone.utc:
             # If aware but not UTC, convert it
