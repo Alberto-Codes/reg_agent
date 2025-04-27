@@ -27,6 +27,7 @@ dependencies = [
     "pydantic-ai>=0.1.6",
     "google-auth>=2.0.0",
     "httpx>=0.27.0",
+    "pydantic-graph>=0.1.6",
 ]
 
 [project.scripts]
