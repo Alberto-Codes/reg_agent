@@ -37,14 +37,16 @@ def run_task_1(engine: Engine, source_dir: Path):
             file_repo = FileRepository(session)
             # Pathlib iteration is sync
             for file_path in source_dir.rglob("*"):
-                if file_path.is_file():
-                    source_path_str = str(file_path.resolve())
-                    try:
+                # Move try block to encompass file check and processing
+                try:
+                    if file_path.is_file():
+                        source_path_str = str(file_path.resolve())
+
                         # Call sync existence check directly
                         if file_repo.exists_by_source_path(source_path_str):
                             skipped_count += 1
                             log.debug("Skipped existing file", path=source_path_str)
-                            continue
+                            continue # Skip to next file path
 
                         # File I/O and stat remain sync
                         file_stat = file_path.stat()
@@ -53,6 +55,7 @@ def run_task_1(engine: Engine, source_dir: Path):
                         last_modified_ts = datetime.datetime.fromtimestamp(
                             file_stat.st_mtime, tz=datetime.timezone.utc
                         )
+                        # Reading blob can also cause OSError
                         with open(file_path, "rb") as f:
                             blob_content = f.read()
 
@@ -72,26 +75,31 @@ def run_task_1(engine: Engine, source_dir: Path):
                         inserted_count += 1
                         log.debug("Staged new FileRecord", path=source_path_str, record_id=new_record.id)
 
-                    except OSError as e:
-                        error_count += 1
-                        log.error(
-                            "OS Error processing file during Task 1",
-                            file=str(file_path),
-                            error=str(e),
-                        )
-                    except Exception as e:
-                        error_count += 1
-                        log.exception(
-                            "Unexpected error processing file during Task 1",
-                            file=str(file_path),
-                            error=str(e),
-                        )
+                    # If it's not a file (e.g., a directory), just continue the loop
+                    # else: pass # Implicitly continue
+
+                except OSError as e:
+                    error_count += 1
+                    log.error(
+                        "OS Error processing path during Task 1",
+                        path=str(file_path),
+                        error=str(e),
+                    )
+                except Exception as e:
+                    error_count += 1
+                    log.exception(
+                        "Unexpected error processing path during Task 1",
+                        path=str(file_path),
+                        error=str(e),
+                    )
+                # Continue to the next file_path even if an error occurred
 
             # Commit happens automatically via sync context manager exit
 
     except Exception as e:
-        error_count += 1
-        log.exception("Error during Task 1 session or execution", error=str(e))
+        # This catches errors initializing the session or repository
+        error_count += 1 # Or should this be handled differently?
+        log.exception("Error during Task 1 session setup or main loop exit", error=str(e))
 
     # Log final summary counts
     log.info(
