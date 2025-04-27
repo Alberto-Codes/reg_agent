@@ -1,6 +1,7 @@
 # Data
 data/
 *.db
+*.db.wal
 
 # Output
 output/
