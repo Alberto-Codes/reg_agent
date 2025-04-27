@@ -49,13 +49,9 @@ class OcrService:
                         "OcrService: CUDA available, setting accelerator device to CUDA."
                     )
                 else:
-                    log.info(
-                        "OcrService: CUDA not available, using CPU accelerator."
-                    )
+                    log.info("OcrService: CUDA not available, using CPU accelerator.")
             except ImportError:
-                log.info(
-                    "OcrService: torch not found, defaulting to CPU accelerator."
-                )
+                log.info("OcrService: torch not found, defaulting to CPU accelerator.")
 
             accelerator_options = AcceleratorOptions(
                 num_threads=num_threads, device=device
@@ -122,14 +118,17 @@ class OcrService:
 
         try:
             results = self.converter.convert_all([file_path])
-            # Use next() to get the single item from the generator
-            conv_result = next(results, None) # Use None as default if generator is empty
+            # Use next() with iter() to get the single item from the iterable
+            conv_result = next(
+                iter(results),
+                None,  # Get iterator from results
+            )  # Use None as default if iterable is empty
 
             if conv_result is None:
                 log.warning(
                     "OcrService: Conversion returned no result.", path=str(file_path)
                 )
-                return None # Explicitly return None if no result
+                return None  # Explicitly return None if no result
 
             if conv_result.status == ConversionStatus.SUCCESS and conv_result.document:
                 markdown_text = conv_result.document.export_to_markdown()

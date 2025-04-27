@@ -1,7 +1,8 @@
 import typer
 
+# import asyncio # Remove asyncio import
 # Import command modules
-from .commands import ingest_cmd
+from reg_agent.commands import ingest_cmd
 
 app = typer.Typer(
     name="reg-agent",
@@ -16,4 +17,5 @@ app.add_typer(ingest_cmd.app, name="ingest", help="Commands for data ingestion."
 # app.add_typer(agent_cmd.app, name="agent")
 
 if __name__ == "__main__":  # pragma: no cover
+    # Revert to original app() call
     app()

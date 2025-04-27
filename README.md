@@ -2,16 +2,21 @@
 
 A Python agent framework designed to manage and interact with a knowledge base of documents, initially focused on regulatory enforcement actions.
 
-The core functionality involves ingesting files into a DuckDB database, extracting text content (especially from PDFs using Docling), and providing tools for an LLM agent to query and reason about the stored information.
+The core functionality involves ingesting files into a DuckDB database, extracting text content (especially from PDFs using Docling), generating structured metadata using LLMs via Vertex AI, and providing tools for future agents to query and reason about the stored information.
 
 This project is managed using `uv` for dependency management and `ruff` for linting/formatting.
 
 ## Core Features
 
 *   **Database:** Uses DuckDB via SQLModel ORM and the Repository pattern (`FileRepository`).
-*   **Schema:** Stores file metadata and content in the `filerecord` table, including `source_path`, `filename`, `blob`, `size_bytes`, `last_modified_ts` (timezone-aware), and `extracted_text`.
-*   **Ingestion:** Provides a CLI (`reg-agent ingest run`) to scan directories, ingest files, and skip duplicates.
-*   **OCR Extraction:** Integrates with the `docling` library (`OcrService`) to automatically extract Markdown text from PDF files during ingestion and store it in the `extracted_text` field.
+*   **Schema:** Stores file metadata and content in the `filerecord` table, including `source_path`, `filename`, `blob`, `size_bytes`, `last_modified_ts`, `extracted_text` (Markdown), `status` (tracking processing stage), and `meta_data` (JSON).
+*   **Ingestion Pipeline:** Provides a CLI (`reg-agent ingest run`) to execute a multi-stage ingestion pipeline:
+    1.  **Record Creation:** Scans directories, reads file metadata, and creates initial `FileRecord` entries, skipping duplicates based on `source_path`.
+    2.  **OCR Extraction:** Integrates with the `docling` library (`OcrService`) to automatically extract Markdown text from PDF files and store it in `extracted_text`.
+    3.  **LLM Metadata Extraction:** Uses `pydantic-ai` (`MetadataExtractionService`) with Google Vertex AI (via its OpenAI-compatible endpoint) to analyze `extracted_text` and generate structured metadata (e.g., `document_type`, `issuing_agency`, `summary`), storing it in the `meta_data` JSON field.
+*   **Flexible Authentication:** Supports multiple Google Cloud authentication methods for the LLM service:
+    *   **Direct ADC:** Uses Application Default Credentials found in the environment.
+    *   **Impersonated ADC:** Uses the caller's ADC to impersonate a target service account (`TARGET_SA_NAME_OR_EMAIL`), generating short-lived tokens automatically via `ImpersonatedTokenManager`.
 *   **Hardware Acceleration:** The `OcrService` attempts to auto-detect CPU cores and CUDA availability to configure Docling accelerator options for potentially faster processing.
 *   **CLI Utilities:** Includes flags like `--recreate-db` for easier database management during development/testing.
 
@@ -21,29 +26,43 @@ This project is managed using `uv` for dependency management and `ruff` for lint
 reg_agent/
 ├── data/                   # Sample data for ingestion (ignored by git)
 ├── db/                     # Stores the DuckDB database file(s) (ignored by git)
+├── scripts/                # Example/utility scripts (e.g., example_metadata_service.py)
 ├── src/
 │   └── reg_agent/
 │       ├── __init__.py
 │       ├── core/           # Foundational components (SQLModel, Repository, etc.)
 │       │   └── db/         # Database connection, models, repositories
 │       ├── pipelines/      # Data processing workflows
-│       │   └── ingestion/  # File ingestion logic (loader.py)
-│       ├── services/       # Business logic services (e.g., OcrService)
+│       │   └── ingestion/  # File ingestion logic
+│       │       ├── __init__.py
+│       │       ├── run.py      # Main pipeline orchestrator
+│       │       └── tasks/      # Individual pipeline task modules
+│       │           ├── __init__.py
+│       │           ├── task_1_create_records.py
+│       │           ├── task_2_ocr.py
+│       │           └── task_3_metadata.py
+│       ├── services/       # Business logic services (OcrService, MetadataExtractionService)
 │       ├── agents/         # LLM Agent implementations and tools (Future)
+│       ├── auth/           # Authentication helpers (TokenManager, HttpAuth)
+│       ├── schemas/        # Pydantic models/schemas (metadata.py)
 │       ├── commands/       # CLI command implementations (ingest_cmd.py)
+│       ├── utils/          # Shared utility functions (downloader, timing)
 │       ├── cli.py          # Main CLI entry point (using Typer)
-│       └── utils/          # Shared utility functions (e.g., downloader)
+│       ├── config.py       # Configuration loading (dotenv)
+│       └── py.typed        # Marker for type checking
 ├── tests/
 │   ├── __init__.py
 │   ├── core/
 │   │   └── db/         # Unit tests for DB components
 │   ├── integration/      # Integration tests (marked with @pytest.mark.integration)
-│   │   └── test_db_integration.py
 │   ├── pipelines/
-│   │   └── ingestion/  # Unit tests for ingestion pipeline
+│   │   └── ingestion/  # Unit tests for ingestion pipeline & tasks
 │   ├── services/       # Unit tests for services
-│   ├── conftest.py        # Pytest configuration (fixtures, logging setup)
-│   └── utils/             # Tests for utilities
+│   ├── commands/       # Unit tests for CLI commands
+│   ├── auth/           # Unit tests for auth components
+│   ├── utils/          # Tests for utilities
+│   └── conftest.py     # Pytest configuration (fixtures, logging setup)
+├── .env.sample          # Sample environment variables file
 ├── .gitignore
 ├── .python-version      # Specifies Python version
 ├── .ruff.toml           # Ruff configuration
@@ -74,9 +93,24 @@ reg_agent/
     ```bash
     uv sync
     ```
-    This command installs main and development dependencies listed in `pyproject.toml` based on `uv.lock`. Key dependencies include `sqlmodel`, `duckdb-engine`, `docling`, and `torch` (for optional CUDA acceleration).
+    This command installs main and development dependencies listed in `pyproject.toml` based on `uv.lock`. Key dependencies include `sqlmodel`, `duckdb-engine`, `docling`, `pydantic-ai`, `google-auth`, `httpx`, and `torch` (for optional CUDA acceleration).
 
-4.  **[Optional] Setup for OCR / GPU Acceleration:**
+4.  **Configuration (Environment Variables):**
+    *   Copy the `.env.sample` file to `.env` (`cp .env.sample .env`).
+    *   Edit the `.env` file and provide values for the required variables, especially for the metadata extraction service:
+        *   `VERTEX_OPENAI_ENDPOINT_URL`: The regional Vertex AI OpenAI-compatible API endpoint URL (e.g., `https://us-central1-aiplatform.googleapis.com/v1beta1/projects/your-gcp-project-id/locations/us-central1/publishers/google/models`).
+        *   `MODEL_NAME`: The specific model to use (e.g., `gemini-1.5-flash-001`).
+        *   `TARGET_SA_NAME_OR_EMAIL` (Optional): If you want to use Service Account Impersonation, provide the email address or unique name of the target service account here. If left blank, direct ADC will be used.
+    *   The application uses `python-dotenv` to automatically load these variables from the `.env` file.
+
+5.  **Google Cloud Authentication:**
+    *   **Direct ADC:** If *not* using impersonation, ensure you are authenticated with Application Default Credentials that have permission to access the Vertex AI API. Run:
+        ```bash
+        gcloud auth application-default login
+        ```
+    *   **Impersonated ADC:** If using `TARGET_SA_NAME_OR_EMAIL`, the account authenticated via `gcloud auth application-default login` needs the `roles/iam.serviceAccountTokenCreator` role on the *target* service account. The target service account itself needs permissions for Vertex AI.
+
+6.  **[Optional] Setup for OCR / GPU Acceleration:**
     *   The `docling` library relies on external tools for OCR, primarily **Tesseract OCR**. Ensure Tesseract is installed and accessible in your system's PATH.
     *   For **GPU acceleration** (CUDA), you need:
         *   A compatible NVIDIA GPU.
@@ -88,9 +122,9 @@ reg_agent/
 
 The primary interaction is through the `reg-agent` CLI command.
 
-### File Ingestion
+### File Ingestion Pipeline
 
-To ingest files from a source directory into the database, extracting text from PDFs:
+To run the full ingestion pipeline (record creation, OCR, metadata extraction) on files from a source directory:
 
 ```bash
 reg-agent ingest run <SOURCE_DIRECTORY> [--db-path <PATH>] [--recreate-db]
@@ -98,31 +132,29 @@ reg-agent ingest run <SOURCE_DIRECTORY> [--db-path <PATH>] [--recreate-db]
 
 *   `<SOURCE_DIRECTORY>`: (Required) The path to the directory containing files to ingest (e.g., `./data`).
 *   `--db-path PATH` (Optional): The path to the DuckDB database file. Defaults to `./db/regulations.db`. The file and its parent directory (`./db/`) will be created if they don't exist.
-*   `--recreate-db` (Optional Flag): If present, deletes the existing database file at `--db-path` before starting ingestion. Useful for ensuring a clean slate during testing or development.
+*   `--recreate-db` (Optional Flag): If present, deletes the existing database file at `--db-path` before starting ingestion. Useful for ensuring a clean slate.
 
 **Examples:**
 
 ```bash
-# Ingest files from ./data into the default ./db/regulations.db
-# This will extract text from any PDFs found.
+# Run full pipeline on ./data into the default ./db/regulations.db
+# This will create records, extract text from PDFs, and extract metadata via LLM.
 reg-agent ingest run ./data
 
 # Ingest files into a specific database, deleting it first if it exists
 reg-agent ingest run ./other_files --db-path ./other_archive.db --recreate-db
 ```
 
-The ingestion process scans the source directory recursively. For each file:
-1.  It checks if the file's absolute path (`source_path`) already exists in the `filerecord` table.
-2.  If it exists, the file is skipped.
-3.  If it does not exist, metadata (filename, size, timestamp) and the binary content (`blob`) are read.
-4.  If the file is a PDF, the `OcrService` attempts to extract its text content as Markdown using `docling`.
-5.  A new record is inserted into the `filerecord` table with all gathered data, including the extracted text (or `NULL` if not a PDF or if extraction failed).
+The pipeline executes the following tasks sequentially:
+1.  **Task 1 (Create Records):** Scans the source directory recursively. For each file, it checks if the file's `source_path` exists in the DB. If not, it reads metadata and blob content, inserting a new `FileRecord` with status `PENDING_PROCESS`.
+2.  **Task 2 (OCR):** Finds records with status `PENDING_PROCESS`. If the file is a PDF, it attempts OCR using `OcrService`. On success, updates the record with `extracted_text` (Markdown) and sets status to `PENDING_METADATA`. On failure or if not a PDF, sets status to `FAILED_OCR` or `SKIPPED_OCR`.
+3.  **Task 3 (Metadata):** Finds records with status `PENDING_METADATA`. It calls the `MetadataExtractionService` to generate structured metadata from the `extracted_text`. On success, updates the `meta_data` field (JSON) and sets status to `COMPLETED`. On failure, sets status to `FAILED_METADATA`. Records without `extracted_text` at this stage are marked `FAILED_UNKNOWN`.
 
 ## Development
 
 ### Running Tests
 
-Tests are written using `pytest` and located in the `tests/` directory.
+Tests are written using `pytest` and located in the `tests/` directory. Fixtures (like DB setup) are managed in `tests/conftest.py`.
 
 *   **Run all tests:**
     ```bash
@@ -143,11 +175,20 @@ Tests are written using `pytest` and located in the `tests/` directory.
 
 ### Linting and Formatting
 
-This project uses `ruff` for linting and formatting.
+This project uses `ruff` for linting and formatting. Configuration is in `.ruff.toml`.
 
 *   **Check and fix:** `uv run ruff check --fix .`
 *   **Format:** `uv run ruff format .`
 
+### Type Checking
+
+MyPy is used for static type checking. Configuration is in `pyproject.toml`.
+
+*   **Run MyPy:**
+    ```bash
+    uv run mypy src tests scripts
+    ```
+
 ### Logging
 
-Structured logging is implemented using `structlog`. During ingestion or testing, logs provide detailed information about the process, including OCR status and database operations.
+Structured logging is implemented using `structlog`. During ingestion or testing, logs provide detailed information about the pipeline tasks, service operations, and database interactions. Configuration in `tests/conftest.py` ensures logs are captured by pytest.
