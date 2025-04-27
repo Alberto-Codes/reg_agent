@@ -24,6 +24,7 @@ dependencies = [
     "types-lxml>=2025.3.30",
     "types-requests>=2.32.0.20250328",
     "torch>=2.0.0",
+    "pydantic-ai>=0.1.6",
 ]
 
 [project.scripts]
