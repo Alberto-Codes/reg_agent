@@ -107,24 +107,26 @@ def test_add_and_retrieve_file_record(db_engine: Engine):
             # --- Timestamp Handling --- #
             # --- last_modified_ts ---
             retrieved_ts = retrieved_record.last_modified_ts
-            assert retrieved_ts is not None, "last_modified_ts is None after retrieval" # Mypy hint
+            if retrieved_ts:
+                # retrieved_ts_dt = cast(datetime.datetime, retrieved_ts) # Removed cast
 
-            # Convert retrieved timestamp (potentially naive) to aware UTC
-            if retrieved_ts.tzinfo is None:
-                # Assume the naive time is local, convert to aware UTC
-                # This is less ideal, ideally DB returns TZ aware or consistent UTC
-                retrieved_ts_aware = retrieved_ts.astimezone(datetime.timezone.utc)
+                # Convert retrieved timestamp (potentially naive) to aware UTC
+                if retrieved_ts.tzinfo is None:
+                    # Assume the naive time is local, convert to aware UTC
+                    retrieved_ts_aware = retrieved_ts.astimezone(datetime.timezone.utc)
+                else:
+                    # Already timezone-aware, ensure it's UTC
+                    retrieved_ts_aware = retrieved_ts.astimezone(datetime.timezone.utc)
+
+                # Compare rounded timestamps
+                timestamp_rounded = timestamp.replace(microsecond=0)
+                retrieved_ts_aware_rounded = retrieved_ts_aware.replace(microsecond=0)
+
+                assert retrieved_ts_aware_rounded == timestamp_rounded, (
+                    f"Timestamp mismatch: Retrieved (UTC): {retrieved_ts_aware_rounded}, Original: {timestamp_rounded}"
+                )
             else:
-                # Already timezone-aware, ensure it's UTC
-                retrieved_ts_aware = retrieved_ts.astimezone(datetime.timezone.utc)
-
-            # Compare rounded timestamps
-            timestamp_rounded = timestamp.replace(microsecond=0)
-            retrieved_ts_aware_rounded = retrieved_ts_aware.replace(microsecond=0)
-
-            assert retrieved_ts_aware_rounded == timestamp_rounded, (
-                f"Timestamp mismatch: Retrieved (UTC): {retrieved_ts_aware_rounded}, Original: {timestamp_rounded}"
-            )
+                pytest.fail("last_modified_ts was None after retrieval, but should not be.")
 
             # --- created_at / updated_at ---
             created_at = retrieved_record.created_at
