@@ -96,7 +96,7 @@ async def run_ingestion(
             for error in error_details:
                 rich.print(f"  - File: [cyan]{error.get('filename', 'N/A')}[/]")
                 rich.print(f"    Status: [yellow]{error.get('status', 'Unknown')}[/]")
-                rich.print(f"    Error: [red]{error.get("error_message", "Unknown error")}[/]")
+                rich.print(f"    Error: [red]{error.get('error_message', 'Unknown error')}[/]")
                 # Optional: include record_id if needed
                 # rich.print(f"    Record ID: {error.get('record_id', 'N/A')}")
             rich.print("[bold red]Check logs for full tracebacks.[/]")
