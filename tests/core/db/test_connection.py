@@ -184,3 +184,76 @@ def test_get_session_rollback_on_exception(test_engine: Engine):
 
 
 # Add more tests as needed, e.g., testing engine creation failure scenarios if possible
+
+
+# --- Tests for Error Handling ---
+
+def test_get_engine_create_failure(test_db_path: Path, mocker, caplog):
+    """Test get_engine when create_engine raises an exception."""
+    # Reset global engine state
+    db_connection._engine = None
+
+    # Mock create_engine to raise an error
+    mock_create = mocker.patch(
+        "reg_agent.core.db.connection.create_engine",
+        side_effect=Exception("Simulated engine creation error"),
+    )
+    # Mock get_db_url to avoid actual path operations if needed
+    mock_get_url = mocker.patch(
+        "reg_agent.core.db.connection.get_db_url",
+        return_value="duckdb:///dummy_path.db"
+    )
+
+    with pytest.raises(Exception, match="Simulated engine creation error"):
+        db_connection.get_engine(db_file=test_db_path)
+
+    # Check that get_db_url was called with the path as a positional argument
+    mock_get_url.assert_called_once_with(test_db_path)
+    mock_create.assert_called_once()
+    assert "Failed to create SQLAlchemy engine" in caplog.text
+    # Ensure global engine is still None
+    assert db_connection._engine is None
+
+
+def test_create_db_and_tables_engine_none(mocker, caplog):
+    """Test create_db_and_tables when get_engine returns None."""
+    # Mock get_engine called inside create_db_and_tables
+    mock_get_engine = mocker.patch("reg_agent.core.db.connection.get_engine", return_value=None)
+    mock_create_all = mocker.patch("reg_agent.core.db.connection.SQLModel.metadata.create_all")
+
+    # Run the function with engine=None (to trigger internal get_engine)
+    db_connection.create_db_and_tables(engine=None)
+
+    mock_get_engine.assert_called_once()
+    mock_create_all.assert_not_called()
+    assert "Engine is None, cannot create tables." in caplog.text
+
+
+def test_create_db_and_tables_create_all_failure(test_engine: Engine, mocker, caplog):
+    """Test create_db_and_tables when create_all raises an exception."""
+    # Mock create_all to raise an error
+    mock_create_all = mocker.patch(
+        "reg_agent.core.db.connection.SQLModel.metadata.create_all",
+        side_effect=Exception("Simulated table creation error"),
+    )
+
+    with pytest.raises(Exception, match="Simulated table creation error"):
+        db_connection.create_db_and_tables(engine=test_engine)
+
+    mock_create_all.assert_called_once_with(test_engine)
+    assert "Failed to create database tables" in caplog.text
+
+
+def test_get_session_engine_none(mocker, caplog):
+    """Test get_session when get_engine returns None."""
+    # Mock get_engine called inside get_session
+    mock_get_engine = mocker.patch("reg_agent.core.db.connection.get_engine", return_value=None)
+    mock_session_init = mocker.patch("reg_agent.core.db.connection.Session")
+
+    with pytest.raises(RuntimeError, match="Database engine is not initialized"):
+        with db_connection.get_session(engine=None) as session: # Trigger internal get_engine
+            pass # pragma: no cover - code inside context won't run
+
+    mock_get_engine.assert_called_once()
+    mock_session_init.assert_not_called()
+    assert "Engine is None, cannot create session." in caplog.text
