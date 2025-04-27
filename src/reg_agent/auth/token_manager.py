@@ -89,10 +89,28 @@ class ImpersonatedTokenManager:
         """Checks if the cached token exists and is not expired (with buffer)."""
         if not self._cached_token or not self._token_expiry:
             return False
-        # Check if expiry is beyond the current time plus buffer
-        return (self._token_expiry - REFRESH_BUFFER) > datetime.datetime.now(
-            datetime.timezone.utc
-        )
+
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        expiry_utc = self._token_expiry
+
+        # Defensively ensure expiry is timezone-aware UTC
+        if expiry_utc.tzinfo is None:
+            # If naive, assume it's UTC (common case for naive datetimes)
+            log.warning(
+                "Token expiry datetime was naive, assuming UTC.", expiry=expiry_utc
+            )
+            expiry_utc = expiry_utc.replace(tzinfo=datetime.timezone.utc)
+        elif expiry_utc.tzinfo != datetime.timezone.utc:
+            # If aware but not UTC, convert it
+            log.warning(
+                "Token expiry datetime was not UTC, converting.",
+                expiry=expiry_utc,
+                original_tz=expiry_utc.tzinfo,
+            )
+            expiry_utc = expiry_utc.astimezone(datetime.timezone.utc)
+
+        # Check if expiry (minus buffer) is beyond the current UTC time
+        return (expiry_utc - REFRESH_BUFFER) > now_utc
 
     def _generate_new_token(self) -> Tuple[str, datetime.datetime]:
         """Generates a new impersonated access token."""
@@ -101,6 +119,7 @@ class ImpersonatedTokenManager:
             target_sa=self.target_service_account,
         )
         try:
+            log.debug("Attempting to create impersonated credentials...")
             # Create impersonated credentials
             impersonated_creds = google.auth.impersonated_credentials.Credentials(
                 source_credentials=self._source_credentials,
@@ -108,24 +127,33 @@ class ImpersonatedTokenManager:
                 target_scopes=self.scopes,
                 lifetime=self.lifetime_seconds,
             )
+            log.debug(
+                "Impersonated credentials object created.", creds_obj=impersonated_creds
+            )
+
             # Refresh the impersonated credentials to get the token
             request = google.auth.transport.requests.Request()
+            log.debug("Attempting to refresh impersonated credentials...")
             impersonated_creds.refresh(request)
+            log.debug(
+                "Impersonated credentials refreshed successfully.",
+                expiry=getattr(impersonated_creds, "expiry", "N/A"),
+            )
 
             if not impersonated_creds.token or not impersonated_creds.expiry:
-                log.error(
-                    "Failed to obtain token/expiry from impersonated credentials."
+                log.error("Failed to obtain token/expiry from refreshed credentials.")
+                raise RuntimeError(
+                    "Could not generate impersonated token after refresh."
                 )
-                raise RuntimeError("Could not generate impersonated token.")
 
             log.info(
-                "Successfully generated new impersonated token",
+                "Successfully generated and refreshed impersonated token",
                 expiry=impersonated_creds.expiry,
             )
             return impersonated_creds.token, impersonated_creds.expiry
         except Exception as e:
             log.error(
-                "Failed to generate impersonated token. "
+                "Failed during impersonated token generation or refresh. "
                 "Ensure caller has 'Service Account Token Creator' role on target SA.",
                 target_sa=self.target_service_account,
                 caller_sa=getattr(

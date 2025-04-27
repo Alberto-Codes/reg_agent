@@ -7,16 +7,35 @@ from pathlib import Path  # Add import
 
 import structlog
 from dotenv import load_dotenv
-from structlog.typing import Processor  # Import Processor type
+from structlog.typing import (
+    Processor,
+    EventDict,
+    WrappedLogger,
+)  # Import necessary types
 
 # --- Configuration Loading ---
 load_dotenv()  # Load environment variables from .env file
+
+
+# --- Robust Filter ---
+def safe_filter_by_level(
+    logger: WrappedLogger | None, method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Wrapper for filter_by_level that handles logger being None."""
+    if logger is None:
+        # If logger is None, we can't determine the level. Let the event pass
+        # through and rely on downstream processors/handlers to manage it.
+        # log.warning("Logger was None in filter_by_level, passing event through", event=event_dict) # Optional warning
+        return event_dict
+    # Otherwise, apply the standard filter
+    return structlog.stdlib.filter_by_level(logger, method_name, event_dict)
+
 
 # --- Logging Configuration ---
 
 # Define processors for structlog
 shared_processors: list[Processor] = [  # Add type hint
-    structlog.stdlib.filter_by_level,
+    safe_filter_by_level,  # Use the safe wrapper
     structlog.stdlib.add_logger_name,
     structlog.stdlib.add_log_level,
     structlog.processors.TimeStamper(fmt="iso"),
