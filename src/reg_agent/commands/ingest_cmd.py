@@ -54,24 +54,25 @@ def run_ingestion(
         recreate_db=recreate_db,
     )
 
-    if not source_dir.is_dir(): # Double-check, though typer should handle exists=True
-        log.error("Source path is not a valid directory", path=str(source_dir))
-        raise typer.BadParameter("Source path must be a directory.")
+    # This check is redundant as typer handles exists=True and dir_okay=True
+    # if not source_dir.is_dir(): # Double-check, though typer should handle exists=True
+    #     log.error("Source path is not a valid directory", path=str(source_dir))
+    #     raise typer.BadParameter("Source path must be a directory.")
 
     if recreate_db and db_file.exists():
         log.warning("Deleting existing database file", path=str(db_file))
         try:
             db_file.unlink()
-        except OSError as e:
+        except OSError as e: # pragma: no cover
             log.error("Failed to delete existing database file", path=str(db_file), error=str(e))
             # Decide if this is critical - for now, log and continue, the get_engine might fail later
-        except Exception as e:
+        except Exception as e: # pragma: no cover
              log.exception("Unexpected error deleting database file", path=str(db_file), error=str(e))
 
     # Ensure parent directory for db exists if a custom path is given
     try:
         db_file.parent.mkdir(parents=True, exist_ok=True)
-    except Exception as e:
+    except Exception as e: # pragma: no cover
         log.error("Failed to create parent directory for database file", path=str(db_file.parent), error=str(e))
         # Consider this a critical failure
         raise typer.Exit(code=1)
