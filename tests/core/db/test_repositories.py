@@ -11,7 +11,6 @@ import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
 # Modules/Classes to test
-from reg_agent.core.db import models
 from reg_agent.core.db.models import FileRecord, FileStatus
 from reg_agent.core.db.repositories import DocumentRepository
 
@@ -41,7 +40,7 @@ def create_test_record(
     status: FileStatus = FileStatus.PENDING_PROCESS,
     extracted_text: str | None = None,
     meta_data: dict | None = None,
-    record_id: uuid.UUID | None = None, # Allow specifying ID for testing get_by_id
+    record_id: uuid.UUID | None = None,  # Allow specifying ID for testing get_by_id
 ) -> FileRecord:
     """Helper function to create a FileRecord with defaults."""
     return FileRecord(
@@ -74,7 +73,7 @@ def test_get_by_id_exists(session: Session, repo: DocumentRepository):
     """Test retrieving an existing record by ID."""
     record_id = uuid.uuid4()
     record = create_test_record(record_id=record_id, source_path="/get/exists.txt")
-    session.add(record) # Add directly to session for setup
+    session.add(record)  # Add directly to session for setup
     session.commit()
 
     retrieved_record = repo.get_by_id(record_id)
@@ -110,7 +109,9 @@ def test_exists_by_source_path_false(repo: DocumentRepository):
 def test_get_records_by_status(session: Session, repo: DocumentRepository):
     """Test retrieving records based on their status."""
     rec1 = create_test_record(source_path="/status/1.txt", status=FileStatus.COMPLETED)
-    rec2 = create_test_record(source_path="/status/2.txt", status=FileStatus.PENDING_PROCESS)
+    rec2 = create_test_record(
+        source_path="/status/2.txt", status=FileStatus.PENDING_PROCESS
+    )
     rec3 = create_test_record(source_path="/status/3.txt", status=FileStatus.COMPLETED)
     session.add_all([rec1, rec2, rec3])
     session.commit()
@@ -127,6 +128,7 @@ def test_get_records_by_status(session: Session, repo: DocumentRepository):
 
 
 # --- Tests for JSON Metadata Methods ---
+
 
 def test_find_by_metadata_found(session: Session, repo: DocumentRepository):
     """Test finding records using metadata filters."""
@@ -165,18 +167,20 @@ def test_find_by_metadata_found(session: Session, repo: DocumentRepository):
     assert len(results_empty_filter) == 3
     assert {rec.id for rec in results_empty_filter} == {rec1.id, rec2.id, rec3.id}
 
+
 def test_find_by_metadata_not_found(repo: DocumentRepository):
     """Test finding records by metadata when no records have metadata."""
     results = repo.find_by_metadata({"author": "Nobody"})
     assert len(results) == 0
+
 
 def test_get_distinct_values(session: Session, repo: DocumentRepository):
     """Test getting distinct values for a metadata key."""
     meta1 = {"author": "Alice", "year": 2023, "topic": "db"}
     meta2 = {"author": "Bob", "year": 2024, "topic": "db"}
     meta3 = {"author": "Alice", "year": 2024, "topic": "ai"}
-    meta4 = {"author": "Charlie", "year": 2023} # Missing topic
-    meta5 = {"author": "Alice", "year": 2023, "topic": "db"} # Duplicate author/topic
+    meta4 = {"author": "Charlie", "year": 2023}  # Missing topic
+    meta5 = {"author": "Alice", "year": 2023, "topic": "db"}  # Duplicate author/topic
 
     rec1 = create_test_record(source_path="/meta/1.txt", meta_data=meta1)
     rec2 = create_test_record(source_path="/meta/2.txt", meta_data=meta2)
@@ -204,10 +208,12 @@ def test_get_distinct_values(session: Session, repo: DocumentRepository):
     distinct_nonexistent = repo.get_distinct_values("nonexistent_key")
     assert len(distinct_nonexistent) == 0
 
+
 def test_get_distinct_values_no_metadata(repo: DocumentRepository):
     """Test getting distinct values when no records have metadata."""
     distinct_authors = repo.get_distinct_values("author")
     assert len(distinct_authors) == 0
+
 
 # TODO: Add tests for get_records_needing_ocr, get_records_needing_metadata
 # TODO: Add tests for find_by_metadata (more edge cases?), get_queryable_fields once implemented

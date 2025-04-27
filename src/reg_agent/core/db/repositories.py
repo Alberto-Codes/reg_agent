@@ -4,7 +4,7 @@ Contains repository classes for database interactions.
 
 import abc
 import uuid
-from typing import Any, Dict, List, Optional, Generator  # Added Generator
+from typing import Any, Dict, List, Optional  # Added Generator
 
 import structlog
 from sqlalchemy import text, and_  # Added and_
@@ -128,7 +128,9 @@ class DocumentRepository(AbstractDocumentRepository):
                 log.debug("Record not found by ID", record_id=record_id)
             return record
         except Exception as e:
-            log.exception("Error fetching record by ID", record_id=record_id, error=str(e))
+            log.exception(
+                "Error fetching record by ID", record_id=record_id, error=str(e)
+            )
             raise
 
     def exists_by_source_path(self, source_path: str) -> bool:
@@ -144,7 +146,11 @@ class DocumentRepository(AbstractDocumentRepository):
         log.debug("Checking existence by source_path", path=source_path)
         try:
             # Use select(1) or select(FileRecord.id) for efficiency if only existence is needed
-            statement = select(FileRecord.id).where(FileRecord.source_path == source_path).limit(1)
+            statement = (
+                select(FileRecord.id)
+                .where(FileRecord.source_path == source_path)
+                .limit(1)
+            )
             result = self.session.exec(statement).first()
             exists = result is not None
             log.debug("Existence check result", path=source_path, exists=exists)
@@ -186,7 +192,7 @@ class DocumentRepository(AbstractDocumentRepository):
                     f"json_extract_string(meta_data, :{param_key_name}) = :{param_value_name}"
                 )
                 conditions.append(condition)
-                params_dict[param_key_name] = f'$.{key}'
+                params_dict[param_key_name] = f"$.{key}"
                 params_dict[param_value_name] = str(value)
                 i += 1
 
@@ -218,7 +224,7 @@ class DocumentRepository(AbstractDocumentRepository):
         log.debug("Getting distinct values for metadata key", key=metadata_key)
         try:
             # Construct the JSON path expression
-            json_path = f'$.{metadata_key}'
+            json_path = f"$.{metadata_key}"
             # Use text() for DuckDB's json_extract_string and DISTINCT
             # Filter out NULL results from json_extract_string
             query = text(
@@ -251,7 +257,7 @@ class DocumentRepository(AbstractDocumentRepository):
         """
         log.debug("Returning predefined list of queryable metadata fields")
         # TODO: Make this dynamic (e.g., from config or introspection) if needed
-        return ["author", "title", "year", "topic", "case_number"] # Example fields
+        return ["author", "title", "year", "topic", "case_number"]  # Example fields
 
     def get_records_by_status(self, status: FileStatus) -> List[FileRecord]:
         """Retrieves all FileRecords with the specified status."""

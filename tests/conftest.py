@@ -73,6 +73,7 @@ def configure_structlog_for_pytest():
 
 # --- Added DB Fixtures ---
 
+
 @pytest.fixture(scope="function")  # Use function scope for isolation
 def test_db_path(tmp_path: Path) -> Path:
     """Provides a temporary path for the test database."""
