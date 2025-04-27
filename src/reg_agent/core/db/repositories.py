@@ -6,7 +6,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 import structlog
-from sqlalchemy import text, and_
+from sqlalchemy import and_, text
 from sqlmodel import Session, select
 
 from reg_agent.core.db.models import FileRecord, FileStatus
@@ -247,11 +247,9 @@ class DocumentRepository(AbstractDocumentRepository):
         if isinstance(status, list):
             status_values = [s.value for s in status]
             log.debug("Fetching records by list of statuses", statuses=status_values)
-            statement = select(FileRecord).where(
-                FileRecord.status.in_(status_values)
-            )  # Use ColumnOperators.in_
-        else:
-            log.debug("Fetching records by status", status=status.value)
+            statement = select(FileRecord).where(FileRecord.status.in_(status_values))
+        elif isinstance(status, FileStatus):
+            log.debug("Fetching records by single status", status=status.value)
             statement = select(FileRecord).where(FileRecord.status == status)
 
         try:

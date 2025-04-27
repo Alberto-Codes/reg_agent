@@ -12,7 +12,6 @@ from reg_agent.core.db.connection import DEFAULT_DB_FILE
 # from reg_agent.pipelines.ingestion.tasks.task_1_create_records import run_task_1
 # from reg_agent.pipelines.ingestion.tasks.task_2_ocr import run_task_2
 # from reg_agent.pipelines.ingestion.tasks.task_3_metadata import run_task_3
-
 # --- Graph Import ---
 from reg_agent.pipelines.ingestion.graph import execute_ingestion_graph
 

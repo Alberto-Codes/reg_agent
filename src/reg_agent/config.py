@@ -1,15 +1,15 @@
 # src/reg_agent/config.py
+import datetime  # Add import
 import logging
 import os
 import sys
-import datetime  # Add import
 from pathlib import Path  # Add import
 
 import structlog
 from dotenv import load_dotenv
 from structlog.typing import (
-    Processor,
     EventDict,
+    Processor,
     WrappedLogger,
 )  # Import necessary types
 

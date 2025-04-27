@@ -26,7 +26,8 @@ class FileStatus(str, Enum):
     COMPLETED = "completed"  # All steps successful
     SKIPPED_OCR = "skipped_ocr"  # OCR skipped (e.g., not a PDF)
     FAILED_OCR = "failed_ocr"  # OCR step failed
-    FAILED_METADATA = "failed_metadata"  # Metadata step failed
+    FAILED_METADATA = "failed_metadata"  # Metadata step failed (API/Service error)
+    FAILED_LLM_OUTPUT = "failed_llm_output"  # LLM output was invalid/unparsable
     FAILED_UNKNOWN = "failed_unknown"  # Generic failure state
 
 

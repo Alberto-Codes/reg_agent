@@ -4,17 +4,17 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+
 # from sqlalchemy.engine import Engine # No longer needed
 # from sqlmodel import Session # No longer needed
-
 # Keep this for type hinting the mock
 from reg_agent.core.db.repositories import DocumentRepository
 
-# Import the task function
-from reg_agent.pipelines.ingestion.tasks.task_1_create_records import run_task_1
-
 # Import UoW for type hinting the mock
 from reg_agent.core.db.unit_of_work import SqlModelUnitOfWork
+
+# Import the task function
+from reg_agent.pipelines.ingestion.tasks.task_1_create_records import run_task_1
 
 # from tests.core.db.test_connection import test_engine # noqa: F401
 

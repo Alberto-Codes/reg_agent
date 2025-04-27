@@ -1,9 +1,9 @@
 from pathlib import Path
 from typing import Optional
 
+import rich  # Import rich for better output
 import structlog
 import typer
-import asyncio
 
 from reg_agent.core.db.connection import DEFAULT_DB_FILE
 from reg_agent.pipelines.ingestion.run import run_ingestion_pipeline
@@ -17,7 +17,7 @@ app = typer.Typer()
 @app.command(
     name="run", help="Ingest files from a source directory into the DuckDB database."
 )
-def run_ingestion(
+async def run_ingestion(
     source_dir: Path = typer.Argument(
         ...,
         exists=True,
@@ -76,14 +76,39 @@ def run_ingestion(
         raise typer.Exit(code=1)
 
     log.info("Starting ingestion pipeline...")
+    pipeline_results = None  # Initialize
     try:
-        # Run the async pipeline function using asyncio.run()
-        asyncio.run(run_ingestion_pipeline(source_dir=source_dir, db_file=db_file))
+        # Directly await the async pipeline function
+        pipeline_results = await run_ingestion_pipeline(
+            source_dir=source_dir, db_file=db_file
+        )
         log.info("Ingestion pipeline finished.")
     except Exception as e:
         # Catch potential exceptions during pipeline execution
         log.exception("Ingestion pipeline failed with an error.", error=str(e))
         raise typer.Exit(code=1)
+
+    # --- Report Error Details --- #
+    if pipeline_results:
+        task_3_results = pipeline_results.get("task_3", {})
+        error_details = task_3_results.get("error_details", [])
+
+        if error_details:
+            rich.print(
+                "\n[bold red]Errors occurred during Task 3 (Metadata Extraction):[/]"
+            )
+            for error in error_details:
+                rich.print(f"  - File: [cyan]{error.get('filename', 'N/A')}[/]")
+                rich.print(f"    Status: [yellow]{error.get('status', 'Unknown')}[/]")
+                rich.print(
+                    f"    Error: [red]{error.get('error_message', 'Unknown error')}[/]"
+                )
+                # Optional: include record_id if needed
+                # rich.print(f"    Record ID: {error.get('record_id', 'N/A')}")
+            rich.print("[bold red]Check logs for full tracebacks.[/]")
+
+    else:
+        log.warning("Pipeline did not return results.")
 
 
 # You might add other ingest-related commands here later, like 'clear' or 'status'

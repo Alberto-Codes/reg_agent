@@ -4,20 +4,21 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 # from sqlalchemy.engine import Engine # Removed
 # from sqlmodel import Session # Removed
-
 from reg_agent.core.db.models import FileRecord, FileStatus
 
 # Keep this for type hinting the mock repository
 from reg_agent.core.db.repositories import DocumentRepository
-from reg_agent.pipelines.ingestion.tasks.task_3_metadata import (
-    MetadataExtractionService,
-    run_task_3,
-)
 
 # Import UoW for type hinting the mock
 from reg_agent.core.db.unit_of_work import SqlModelUnitOfWork
+from reg_agent.pipelines.ingestion.tasks.task_3_metadata import (
+    MetadataExtractionService,
+    Task3Result,
+    run_task_3,
+)
 from reg_agent.schemas.metadata import RegulationDocumentMetadata
 
 # --- Fixtures ---
@@ -78,6 +79,7 @@ def pending_metadata_records() -> list[FileRecord]:
         FileRecord(
             id=uuid.uuid4(),
             source_path="/path/file1.pdf",
+            filename="file1.pdf",
             status=FileStatus.PENDING_METADATA,
             extracted_text="Sample text for metadata extraction 1.",
             blob=b"pdf1",
@@ -86,6 +88,7 @@ def pending_metadata_records() -> list[FileRecord]:
         FileRecord(
             id=uuid.uuid4(),
             source_path="/path/file2.txt",  # Different type for variety
+            filename="file2.txt",
             status=FileStatus.PENDING_METADATA,
             extracted_text="Sample text for metadata extraction 2.",
             blob=b"txt2",
@@ -112,13 +115,18 @@ async def test_run_task_3_success(
 
     # Patch asyncio.sleep to avoid actual sleeping
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        found, success, errors = await run_task_3()  # No engine arg
+        result: Task3Result = await run_task_3()  # Capture the result dictionary
 
-    assert found == 2
-    assert success == 2
-    assert errors == 0
+    assert result["found"] == 2
+    assert result["success"] == 2
+    assert result["errors"] == 0
+    assert not result["error_details"]
     mock_repo_instance.get_records_by_status.assert_called_once_with(
-        [FileStatus.PENDING_METADATA, FileStatus.FAILED_METADATA]
+        [
+            FileStatus.PENDING_METADATA,
+            FileStatus.FAILED_METADATA,
+            FileStatus.FAILED_LLM_OUTPUT,
+        ]
     )
     assert mock_metadata_service.extract_metadata.call_count == 2
 
@@ -148,11 +156,12 @@ async def test_run_task_3_no_records_found(
     mock_repo_instance.get_records_by_status.return_value = []  # Simulate no records
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        found, success, errors = await run_task_3()  # No engine arg
+        result: Task3Result = await run_task_3()  # Capture the result dictionary
 
-    assert found == 0
-    assert success == 0
-    assert errors == 0
+    assert result["found"] == 0
+    assert result["success"] == 0
+    assert result["errors"] == 0
+    assert not result["error_details"]
     mock_metadata_service.extract_metadata.assert_not_called()
     # Verify UoW usage (entered and exited even if no records)
     mock_uow_class.assert_called_once()
@@ -161,7 +170,11 @@ async def test_run_task_3_no_records_found(
 
     # Check that the repo method was still called with the correct statuses
     mock_repo_instance.get_records_by_status.assert_called_once_with(
-        [FileStatus.PENDING_METADATA, FileStatus.FAILED_METADATA]
+        [
+            FileStatus.PENDING_METADATA,
+            FileStatus.FAILED_METADATA,
+            FileStatus.FAILED_LLM_OUTPUT,
+        ]
     )
 
 
@@ -174,30 +187,40 @@ async def test_run_task_3_no_extracted_text(
     """Test Task 3 when a record is found but has no extracted_text using UoW."""
     mock_uow_class, mock_uow_instance, mock_repo_instance = mock_uow_task3
     # Modify one record to have no text
-    pending_metadata_records[0].extracted_text = None
+    record_with_no_text = pending_metadata_records[0]
+    record_with_text = pending_metadata_records[1]
+    record_with_no_text.extracted_text = None
     mock_repo_instance.get_records_by_status.return_value = pending_metadata_records
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        found, success, errors = await run_task_3()  # No engine arg
+        result: Task3Result = await run_task_3()  # Capture the result dictionary
 
-    assert found == 2
-    assert success == 1  # Only the second record succeeds
-    assert errors == 1  # First record causes an error
+    assert result["found"] == 2
+    assert result["success"] == 1  # Only the second record succeeds
+    assert result["errors"] == 1  # First record causes an error
+    assert len(result["error_details"]) == 1
+    assert result["error_details"][0]["record_id"] == str(record_with_no_text.id)
+    assert result["error_details"][0]["filename"] == record_with_no_text.filename
+    assert result["error_details"][0]["status"] == FileStatus.FAILED_UNKNOWN
+    assert "no extracted text" in result["error_details"][0]["error_message"]
+
     # Ensure metadata extraction was only called for the second record
     mock_metadata_service.extract_metadata.assert_called_once_with(
-        pending_metadata_records[
-            1
-        ].extracted_text  # Called only with text from record 2
+        record_with_text.extracted_text  # Called only with text from record 2
     )
 
     # Check that the repo method was called with the correct statuses
     mock_repo_instance.get_records_by_status.assert_called_once_with(
-        [FileStatus.PENDING_METADATA, FileStatus.FAILED_METADATA]
+        [
+            FileStatus.PENDING_METADATA,
+            FileStatus.FAILED_METADATA,
+            FileStatus.FAILED_LLM_OUTPUT,
+        ]
     )
 
     # Check final status of records
-    assert pending_metadata_records[0].status == FileStatus.FAILED_UNKNOWN
-    assert pending_metadata_records[1].status == FileStatus.COMPLETED
+    assert record_with_no_text.status == FileStatus.FAILED_UNKNOWN
+    assert record_with_text.status == FileStatus.COMPLETED
 
     # Verify UoW usage
     mock_uow_class.assert_called_once()
@@ -219,14 +242,22 @@ async def test_run_task_3_metadata_extraction_returns_none(
     )
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        found, success, errors = await run_task_3()  # No engine arg
+        result: Task3Result = await run_task_3()  # Capture the result dictionary
 
-    assert found == 2
-    assert success == 0
-    assert errors == 2  # Both records fail metadata extraction
+    assert result["found"] == 2
+    assert result["success"] == 0
+    assert result["errors"] == 2  # Both records fail metadata extraction
+    assert len(result["error_details"]) == 2
+    assert result["error_details"][0]["status"] == FileStatus.FAILED_LLM_OUTPUT
+    assert result["error_details"][1]["status"] == FileStatus.FAILED_LLM_OUTPUT
+    assert (
+        "LLM output invalid/unparsable" in result["error_details"][0]["error_message"]
+    )
+
     assert mock_metadata_service.extract_metadata.call_count == 2
-    assert pending_metadata_records[0].status == FileStatus.FAILED_METADATA
-    assert pending_metadata_records[1].status == FileStatus.FAILED_METADATA
+    # Check final status is FAILED_LLM_OUTPUT
+    assert pending_metadata_records[0].status == FileStatus.FAILED_LLM_OUTPUT
+    assert pending_metadata_records[1].status == FileStatus.FAILED_LLM_OUTPUT
 
     # Verify UoW usage
     mock_uow_class.assert_called_once()
@@ -235,7 +266,11 @@ async def test_run_task_3_metadata_extraction_returns_none(
 
     # Check that the repo method was called with the correct statuses
     mock_repo_instance.get_records_by_status.assert_called_once_with(
-        [FileStatus.PENDING_METADATA, FileStatus.FAILED_METADATA]
+        [
+            FileStatus.PENDING_METADATA,
+            FileStatus.FAILED_METADATA,
+            FileStatus.FAILED_LLM_OUTPUT,
+        ]
     )
 
 
@@ -248,16 +283,27 @@ async def test_run_task_3_metadata_extraction_exception(
     """Test Task 3 when metadata extraction call raises an exception using UoW."""
     mock_uow_class, mock_uow_instance, mock_repo_instance = mock_uow_task3
     mock_repo_instance.get_records_by_status.return_value = pending_metadata_records
-    api_error = Exception("Simulated API Failure")
+    api_error_message = "Simulated API Failure"
+    api_error = Exception(api_error_message)
     mock_metadata_service.extract_metadata.side_effect = api_error
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        found, success, errors = await run_task_3()  # No engine arg
+        result: Task3Result = await run_task_3()  # Capture the result dictionary
 
-    assert found == 2
-    assert success == 0
-    assert errors == 2  # Both records fail due to API error
-    assert mock_metadata_service.extract_metadata.call_count == 2
+    assert result["found"] == 2
+    assert result["success"] == 0
+    assert result["errors"] == 2  # Both records fail due to API error
+    assert len(result["error_details"]) == 2
+    assert result["error_details"][0]["status"] == FileStatus.FAILED_METADATA
+    assert result["error_details"][1]["status"] == FileStatus.FAILED_METADATA
+    assert api_error_message in result["error_details"][0]["error_message"]
+    assert api_error_message in result["error_details"][1]["error_message"]
+
+    # Check that the service was called for both records (with retries)
+    # MAX_RETRIES = 3, so 3 calls per record = 6 total calls
+    assert mock_metadata_service.extract_metadata.call_count == 2 * 3
+
+    # Check final status is FAILED_METADATA
     assert pending_metadata_records[0].status == FileStatus.FAILED_METADATA
     assert pending_metadata_records[1].status == FileStatus.FAILED_METADATA
 
@@ -266,16 +312,12 @@ async def test_run_task_3_metadata_extraction_exception(
     mock_uow_class.return_value.__enter__.assert_called_once()
     mock_uow_class.return_value.__exit__.assert_called_once()
 
-    # Check that the repo method was called with the correct statuses
-    mock_repo_instance.get_records_by_status.assert_called_once_with(
-        [FileStatus.PENDING_METADATA, FileStatus.FAILED_METADATA]
-    )
-
 
 @pytest.mark.asyncio
 async def test_run_task_3_service_init_fails(mocker):
     """Test Task 3 when MetadataExtractionService fails to initialize."""
-    init_error = RuntimeError("Service init failed")
+    init_error_message = "Service init failed"
+    init_error = RuntimeError(init_error_message)
     mocker.patch(
         "reg_agent.pipelines.ingestion.tasks.task_3_metadata.MetadataExtractionService",
         side_effect=init_error,
@@ -286,33 +328,47 @@ async def test_run_task_3_service_init_fails(mocker):
     )
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        found, success, errors = await run_task_3()
+        result: Task3Result = await run_task_3()  # Capture the result dictionary
 
-    assert found == 0
-    assert success == 0
-    assert errors == 1  # The service init failure
-    mock_uow_class.assert_not_called()  # UoW should not be entered
+    assert result["found"] == 0
+    assert result["success"] == 0
+    assert result["errors"] == 1  # Single error for service init failure
+    assert len(result["error_details"]) == 1
+    assert (
+        result["error_details"][0]["record_id"] == "N/A"
+    )  # Indicate service level error
+    assert result["error_details"][0]["status"] == FileStatus.FAILED_METADATA
+    assert init_error_message in result["error_details"][0]["error_message"]
+
+    # UoW should not have been entered
+    mock_uow_class.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_run_task_3_uow_context_fails(mocker, mock_metadata_service):
     """Test Task 3 when the UoW context manager itself fails on entry."""
-    uow_error = Exception("DB Connection Failed")
+    uow_error_message = "DB Connection Failed"
+    uow_error = Exception(uow_error_message)
     mock_uow_class = mocker.patch(
         "reg_agent.pipelines.ingestion.tasks.task_3_metadata.SqlModelUnitOfWork"
     )
     mock_uow_class.return_value.__enter__.side_effect = uow_error
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        found, success, errors = await run_task_3()
+        result: Task3Result = await run_task_3()  # Capture the result dictionary
 
-    assert found == 0  # Found count is determined inside UoW
-    assert success == 0
-    assert errors == 1  # The UoW entry failure
+    assert result["found"] == 0  # Found count is from *inside* UoW
+    assert result["success"] == 0
+    assert result["errors"] == 1  # UoW context error counts as one
+    assert len(result["error_details"]) == 1
+    assert result["error_details"][0]["status"] == FileStatus.FAILED_UNKNOWN
+    assert uow_error_message in result["error_details"][0]["error_message"]
+
     mock_metadata_service.extract_metadata.assert_not_called()
-    mock_uow_class.assert_called_once()  # UoW class was called
-    mock_uow_class.return_value.__enter__.assert_called_once()  # __enter__ was attempted
-    mock_uow_class.return_value.__exit__.assert_not_called()  # __exit__ not called
+    # UoW class was called, but __enter__ failed
+    mock_uow_class.assert_called_once()
+    mock_uow_class.return_value.__enter__.assert_called_once()
+    mock_uow_class.return_value.__exit__.assert_not_called()  # Should not be called if __enter__ fails
 
 
 @pytest.mark.asyncio
@@ -324,30 +380,23 @@ async def test_run_task_3_uow_commit_fails(
     mock_repo_instance.get_records_by_status.return_value = pending_metadata_records
 
     # Simulate commit failure by making __exit__ raise an error
-    commit_error = Exception("Simulated Commit Failure")
+    commit_error_message = "Simulated Commit Failure"
+    commit_error = Exception(commit_error_message)
     mock_uow_class.return_value.__exit__.side_effect = commit_error
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        found, success, errors = await run_task_3()
+        result: Task3Result = await run_task_3()  # Capture the result dictionary
 
-    # Counts reflect successful processing *before* commit failure
-    assert found == 2
-    assert success == 2
-    # The error count should include the final UoW commit error
-    assert errors == 1
+    assert result["found"] == 2  # Found count happens inside UoW before exit fails
+    assert result["success"] == 2  # Success count happens inside UoW
+    assert result["errors"] == 1  # UoW commit error counts as one
+    assert len(result["error_details"]) == 1
+    assert result["error_details"][0]["status"] == FileStatus.FAILED_UNKNOWN
+    assert commit_error_message in result["error_details"][0]["error_message"]
 
-    # Check record state *before* commit failed
-    assert pending_metadata_records[0].status == FileStatus.COMPLETED
-    assert pending_metadata_records[1].status == FileStatus.COMPLETED
-
-    # Verify UoW usage
+    # Service was called
+    assert mock_metadata_service.extract_metadata.call_count == 2
+    # UoW context was entered and exit was attempted
     mock_uow_class.assert_called_once()
     mock_uow_class.return_value.__enter__.assert_called_once()
     mock_uow_class.return_value.__exit__.assert_called_once()
-
-
-# Remove obsolete tests:
-# - test_run_task_3_success_commit_fails (replaced by test_run_task_3_uow_commit_fails)
-# - test_run_task_3_api_error_commit_fails (UoW commit failure is tested separately)
-# - test_run_task_3_service_close_fails (service.close not called anymore)
-# - test_run_task_3_no_text_get_fails (nested session.get logic removed)

@@ -24,8 +24,9 @@ This project is managed using `uv` for dependency management and `ruff` for lint
 
 ```
 reg_agent/
-├── data/                   # Sample data for ingestion (ignored by git)
+├── data/                   # Sample data for ingestion (not checked into git)
 ├── db/                     # Stores the DuckDB database file(s) (ignored by git)
+├── logs/                   # Stores timestamped log files from runs (ignored by git)
 ├── scripts/                # Example/utility scripts (e.g., example_metadata_service.py)
 ├── src/
 │   └── reg_agent/
@@ -191,4 +192,20 @@ MyPy is used for static type checking. Configuration is in `pyproject.toml`.
 
 ### Logging
 
-Structured logging is implemented using `structlog`. During ingestion or testing, logs provide detailed information about the pipeline tasks, service operations, and database interactions. Configuration in `tests/conftest.py` ensures logs are captured by pytest.
+Structured logging is implemented using `structlog`. During ingestion or testing, logs provide detailed information about the pipeline tasks, service operations, and database interactions. By default, logs are written to timestamped files in the `./logs/` directory. Configuration in `tests/conftest.py` ensures logs are also captured by pytest during test runs.
+
+### Direct Database Querying
+
+While the application uses SQLModel and the Repository pattern, you can also query the DuckDB database directly for quick inspection or analysis.
+
+A utility script `scripts/query_metadata.py` is provided for this purpose. It connects to the default database (`./db/regulations.db`) and prints the `id`, `filename`, `status`, and pretty-printed `meta_data` (JSON) for all records in the `filerecord` table.
+
+To run it:
+
+```bash
+python scripts/query_metadata.py
+# Or using uv:
+# uv run python scripts/query_metadata.py
+```
+
+You can modify this script to perform different queries as needed.
