@@ -5,11 +5,11 @@ import pathlib  # Import the module itself for original methods
 import logging
 
 # Import the main Typer app from your cli module
-from reg_agent.cli import app # type: ignore
+from reg_agent.cli import app
 
 # Initialize runner to keep stdout and stderr separate
 # Use try_io=True to capture low-level I/O which might include structlog stderr
-runner = CliRunner(mix_stderr=False) # type: ignore
+runner = CliRunner(mix_stderr=False)
 # runner = CliRunner(mix_stderr=False) # type: ignore
 
 

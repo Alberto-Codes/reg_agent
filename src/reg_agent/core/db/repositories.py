@@ -91,7 +91,7 @@ class FileRepository:
         """Retrieves all FileRecords where extracted_text is None."""
         log.debug("Fetching records needing OCR")
         try:
-            statement = select(FileRecord).where(FileRecord.extracted_text == None) # type: ignore
+            statement = select(FileRecord).where(FileRecord.extracted_text == None)
             results = self.session.exec(statement).all()
             log.info("Fetched records needing OCR", count=len(results))
             return list(results) # Ensure it's a list
@@ -104,8 +104,8 @@ class FileRepository:
         log.debug("Fetching records needing metadata")
         try:
             statement = select(FileRecord).where(
-                FileRecord.extracted_text != None, # type: ignore
-                FileRecord.meta_data == None # type: ignore
+                FileRecord.extracted_text != None,
+                FileRecord.meta_data == None
             )
             results = self.session.exec(statement).all()
             log.info("Fetched records needing metadata", count=len(results))

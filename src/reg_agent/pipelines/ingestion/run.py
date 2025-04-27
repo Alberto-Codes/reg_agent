@@ -15,9 +15,9 @@ from reg_agent.core.db.connection import DEFAULT_DB_FILE, get_engine, create_db_
 # from reg_agent.services.ocr_service import OcrService # Not injecting OCR service for now
 
 # --- Task Imports ---
-from .tasks.task_1_create_records import run_task_1
-from .tasks.task_2_ocr import run_task_2
-from .tasks.task_3_metadata import run_task_3
+from reg_agent.pipelines.ingestion.tasks.task_1_create_records import run_task_1
+from reg_agent.pipelines.ingestion.tasks.task_2_ocr import run_task_2
+from reg_agent.pipelines.ingestion.tasks.task_3_metadata import run_task_3
 
 # --- Utility Imports ---
 from reg_agent.utils.timing import log_task_duration

@@ -9,12 +9,8 @@ from sqlmodel import Session
 
 from reg_agent.core.db.models import FileRecord, FileStatus
 from reg_agent.core.db.repositories import FileRepository
-from reg_agent.pipelines.ingestion.tasks.task_3_metadata import run_task_3
-from reg_agent.services.metadata_service import MetadataExtractionService
-from reg_agent.schemas.metadata import RegulationDocumentMetadata
-
-# Use the existing engine fixture from connection tests
-from tests.core.db.test_connection import test_engine # noqa: F401
+from reg_agent.pipelines.ingestion.tasks.task_3_metadata import run_task_3, MetadataExtractionService
+from reg_agent.schemas.metadata import RegulationDocumentMetadata, ExtractedMetadata
 
 # --- Fixtures ---
 

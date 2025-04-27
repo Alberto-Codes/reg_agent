@@ -1,8 +1,8 @@
 # src/reg_agent/auth/http_auth.py
+import google.auth.transport.requests
+import google.oauth2.id_token
 import httpx
-
-# Assuming ImpersonatedTokenManager is in token_manager.py in the same directory
-from .token_manager import ImpersonatedTokenManager
+from reg_agent.auth.token_manager import ImpersonatedTokenManager
 
 
 # --- Dynamic Bearer Token Authentication for httpx ---

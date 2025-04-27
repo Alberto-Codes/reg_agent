@@ -1,9 +1,9 @@
 import pytest
-import httpx
+import requests
 from unittest.mock import MagicMock
 
-from src.reg_agent.auth.http_auth import DynamicBearerAuth
-from src.reg_agent.auth.token_manager import ImpersonatedTokenManager
+from reg_agent.auth.http_auth import DynamicBearerAuth
+from reg_agent.auth.token_manager import ImpersonatedTokenManager
 
 
 def test_dynamic_bearer_auth_flow():
@@ -14,7 +14,7 @@ def test_dynamic_bearer_auth_flow():
     mock_token_manager.get_token.return_value = mock_token
 
     auth = DynamicBearerAuth(token_manager=mock_token_manager)
-    dummy_request = httpx.Request("GET", "https://example.com")
+    dummy_request = requests.Request("GET", "https://example.com")
 
     # Act
     # Iterate through the generator to execute the flow

@@ -12,8 +12,7 @@ from reg_agent.core.db.models import FileRecord, FileStatus
 from reg_agent.core.db.repositories import FileRepository
 from reg_agent.pipelines.ingestion.tasks.task_1_create_records import run_task_1
 
-# Revert to original import style
-from tests.core.db.test_connection import test_engine # noqa: F401
+# from tests.core.db.test_connection import test_engine # noqa: F401
 
 @pytest.fixture
 def mock_session(mocker):

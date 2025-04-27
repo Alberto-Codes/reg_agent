@@ -1,8 +1,9 @@
 import typer
 # import asyncio # Remove asyncio import
+import structlog
 
 # Import command modules
-from .commands import ingest_cmd
+from reg_agent.commands import ingest_cmd
 
 app = typer.Typer(
     name="reg-agent",

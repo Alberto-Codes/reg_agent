@@ -14,7 +14,7 @@ from reg_agent.pipelines.ingestion.tasks.task_2_ocr import run_task_2
 from reg_agent.services.ocr_service import OcrService
 
 # Use the existing engine fixture from connection tests
-from tests.core.db.test_connection import test_engine # noqa: F401
+# from tests.core.db.test_connection import test_engine # noqa: F401
 
 # --- Fixtures ---
 

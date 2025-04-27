@@ -3,6 +3,7 @@ from typing import Optional, Type
 
 import google.auth
 import google.auth.transport.requests
+import google.oauth2.id_token
 import httpx
 from pydantic import BaseModel
 
@@ -12,10 +13,10 @@ from pydantic_ai.models.openai import OpenAIModel, OpenAIModelSettings
 from pydantic_ai.providers.openai import OpenAIProvider
 
 # --- Internal Imports ---
-from ..auth.token_manager import ImpersonatedTokenManager
-from ..auth.http_auth import DynamicBearerAuth  # Import from new location
-from ..schemas.metadata import RegulationDocumentMetadata  # Import schema
-from ..config import MODEL_NAME, BASE_URL, TARGET_SA_NAME_OR_EMAIL, log  # Import config
+from reg_agent.auth.token_manager import ImpersonatedTokenManager  # type: ignore[import-not-found]
+from reg_agent.auth.http_auth import DynamicBearerAuth  # type: ignore[import-not-found] # Import from new location
+from reg_agent.schemas.metadata import RegulationDocumentMetadata  # type: ignore[import-not-found] # Import schema
+from reg_agent.config import MODEL_NAME, BASE_URL, TARGET_SA_NAME_OR_EMAIL, log # Remove unused type: ignore
 
 # --- Constants --- #
 # Define longer timeouts and more retries

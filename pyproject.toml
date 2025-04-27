@@ -99,3 +99,35 @@ markers = [
 # filterwarnings = [
 #     "ignore::DeprecationWarning",
 # ]
+
+# miscellaneous
+
+[tool.mypy]
+# Global options
+python_version = "3.12"
+namespace_packages = false
+mypy_path = "src"
+# packages = ["reg_agent"] # Removed - specify targets on command line
+# files = ["tests"] # Removed - specify targets on command line
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+# Ignore missing imports for libraries that don't have stubs
+
+[[tool.mypy.overrides]]
+# Ignore errors from tests trying to import the main package
+module = "tests.*"
+ignore_errors = false # Check tests, but...
+# ignore_missing_imports = true # ...allow them to import reg_agent (didn't work)
+disable_error_code = ["import-not-found"]
+
+[[tool.mypy.overrides]]
+# Ignore errors from relative imports within the main package when run this way
+module = "reg_agent.*"
+ignore_errors = false # Check the package, but...
+# ignore_missing_imports = true # Allow relative imports like .token_manager (Might hide actual errors)
+# Let's be more specific and ignore the specific error code for relative imports if possible
+# If `ignore_missing_imports = true` above works, use that. Otherwise, investigate specific error codes.
+# For now, let's assume the tests.* override might be enough, or that adding __init__.py fixed some.
+# Re-run first to see which import errors remain within reg_agent.

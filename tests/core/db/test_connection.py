@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import inspect as sql_inspect  # Renamed to avoid naming conflict
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel
+from sqlalchemy.orm import sessionmaker
 
 # Module to test
 from reg_agent.core.db import connection as db_connection
@@ -256,3 +257,18 @@ def test_get_session_engine_none(mocker, caplog):
 
     mock_get_engine.assert_called_once()
     mock_session_init.assert_not_called()
+
+
+@pytest.fixture(scope="function")
+def db_session(db_engine: Engine) -> Generator[Session, None, None]:
+    """Provides a clean SQLAlchemy Session for each test function."""
+    session_local = sessionmaker(autocommit=False, autoflush=False, bind=db_engine)
+    session = session_local()
+    try:
+        yield session  # Explicitly yield the session
+        session.commit()  # Commit transaction if test was successful
+    except Exception:
+        session.rollback()  # Rollback if test failed
+        raise
+    finally:
+        session.close()  # Close the session
