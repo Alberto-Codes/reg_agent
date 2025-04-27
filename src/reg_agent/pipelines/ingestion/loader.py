@@ -1,21 +1,30 @@
 import datetime
 import time
 from pathlib import Path
+from typing import Optional
 
-import duckdb
 import structlog
 
-from reg_agent.core.db.connection import DEFAULT_DB_FILE, connect_db
+# Use create_db_and_tables and get_engine
+from reg_agent.core.db.connection import (
+    DEFAULT_DB_FILE,
+    create_db_and_tables,
+    get_engine,
+    get_session,
+)
+from reg_agent.core.db.models import FileRecord  # Import the model
+from reg_agent.core.db.repositories import FileRepository  # Import the repository
+from reg_agent.services.ocr_service import OcrService
 
 log = structlog.get_logger()
 
 
 def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
-    """Scans a directory and ingests files into the DuckDB database.
+    """Scans a directory and ingests files into the database using SQLModel and Repository.
 
     Args:
         source_dir: The directory containing files to ingest.
-        db_file: The path to the DuckDB database file.
+        db_file: Path to the database file (used for logging and engine initialization).
     """
     if not source_dir.is_dir():
         log.error(
@@ -32,109 +41,115 @@ def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
     error_count = 0
     start_time = time.monotonic()
 
+    # Instantiate OcrService once
+    ocr_service = OcrService()
+    # Check if the converter was initialized successfully
+    ocr_available = ocr_service.converter is not None
+    if not ocr_available:
+        log.warning(
+            "OCR Service converter not initialized. Text extraction will be skipped."
+        )
+        # Decide if we should proceed without OCR or halt. For now, proceed.
+
+    # Get the engine instance (potentially initializing it with the specified db_file)
     try:
-        con = connect_db(db_file=db_file)
-        log.debug("Database connection established for ingestion.")
+        engine = get_engine(db_file=db_file)
+        create_db_and_tables(engine)  # Ensure tables exist using the correct engine
+    except Exception as e:
+        log.exception(
+            "Failed to initialize database engine or tables. Halting ingestion.",
+            error=str(e),
+        )
+        return  # Stop ingestion if DB setup fails
 
-        # Prepare insert statement
-        # Using prepared statements is generally safer and can be faster
-        # Using INSERT OR IGNORE to skip duplicates based on PRIMARY KEY (source_path)
-        # insert_sql = """
-        #     INSERT OR IGNORE INTO files (source_path, filename, blob, size_bytes, last_modified_ts)
-        #     VALUES (?, ?, ?, ?, ?);
-        #     """
-        check_sql = "SELECT 1 FROM files WHERE source_path = ? LIMIT 1;"
-        insert_sql = """
-            INSERT INTO files (source_path, filename, blob, size_bytes, last_modified_ts)
-            VALUES (?, ?, ?, ?, ?);
-            """
+    # Use the session context manager with the specific engine
+    try:
+        with get_session(engine=engine) as session:  # Pass the specific engine
+            log.debug("Database session obtained for ingestion.")
+            file_repo = FileRepository(session)  # Instantiate repository with session
 
-        for file_path in source_dir.rglob("*"):  # Recursive glob to find all files
-            if file_path.is_file():
-                try:
-                    # 1. Get Metadata
-                    file_stat = file_path.stat()
-                    source_path_str = str(
-                        file_path.resolve()
-                    )  # Use absolute path as PK
-                    filename = file_path.name
-                    size_bytes = file_stat.st_size
-                    # Convert modification time to UTC datetime
-                    last_modified_ts = datetime.datetime.fromtimestamp(
-                        file_stat.st_mtime, tz=datetime.timezone.utc
-                    )
+            for file_path in source_dir.rglob("*"):
+                if file_path.is_file():
+                    source_path_str = str(file_path.resolve())  # Use absolute path
+                    try:
+                        # 1. Check if record exists using the repository
+                        if file_repo.exists_by_source_path(source_path_str):
+                            skipped_count += 1
+                            log.debug("Skipped existing file", path=source_path_str)
+                            continue  # Skip to the next file
 
-                    # 2. Read Blob
-                    with open(file_path, "rb") as f:
-                        blob_content = f.read()
-
-                    # 3. Check if record exists before inserting
-                    existing_record = con.execute(
-                        check_sql, [source_path_str]
-                    ).fetchone()
-
-                    if existing_record:
-                        skipped_count += 1
-                        log.debug("Skipped existing file", path=source_path_str)
-                    else:
-                        # Insert Record if it doesn't exist
-                        con.execute(
-                            insert_sql,
-                            [
-                                source_path_str,
-                                filename,
-                                blob_content,
-                                size_bytes,
-                                last_modified_ts,
-                            ],
+                        # 2. Get File Metadata
+                        file_stat = file_path.stat()
+                        filename = file_path.name
+                        size_bytes = file_stat.st_size
+                        last_modified_ts = datetime.datetime.fromtimestamp(
+                            file_stat.st_mtime, tz=datetime.timezone.utc
                         )
+
+                        # 3. Read Blob
+                        with open(file_path, "rb") as f:
+                            blob_content = f.read()
+
+                        # 4. Attempt Text Extraction
+                        extracted_markdown: Optional[str] = None  # Ensure type hint
+                        if ocr_available:  # Use the flag set earlier
+                            try:
+                                # OcrService internally checks if file is PDF
+                                extracted_markdown = (
+                                    ocr_service.extract_markdown_from_file(file_path)
+                                )
+                                # Log success/failure inside extract_markdown_from_file
+                            except Exception as ocr_err:
+                                log.warning(
+                                    "Failed to extract text from file",
+                                    file=source_path_str,
+                                    error=str(ocr_err),
+                                    exc_info=False,  # Keep log cleaner, details in OcrService logs
+                                )
+                                # Proceed without extracted text
+
+                        # 5. Create FileRecord Model instance
+                        new_record = FileRecord(
+                            source_path=source_path_str,
+                            filename=filename,
+                            blob=blob_content,
+                            extracted_text=extracted_markdown,  # Add extracted text here
+                            size_bytes=size_bytes,
+                            last_modified_ts=last_modified_ts,
+                            # id is generated automatically by default UUID
+                        )
+
+                        # 6. Add record to session via repository
+                        file_repo.add(new_record)  # Repository adds to session
                         inserted_count += 1
-                        log.debug("Inserted file", path=source_path_str)
+                        # Logging is handled within repository.add
 
-                    # Original INSERT OR IGNORE logic commented out below
-                    # cur = con.execute(
-                    #     insert_sql,
-                    #     [
-                    #         source_path_str,
-                    #         filename,
-                    #         blob_content,
-                    #         size_bytes,
-                    #         last_modified_ts,
-                    #     ],
-                    # )
-                    #
-                    # if cur.rowcount > 0:
-                    #     inserted_count += 1
-                    #     log.debug("Inserted file", path=source_path_str)
-                    # else:
-                    #     skipped_count += 1
-                    #     log.debug("Skipped existing file", path=source_path_str)
+                    except OSError as e:
+                        error_count += 1
+                        log.error(
+                            "OS Error processing file",
+                            file=str(file_path),
+                            error=str(e),
+                        )
+                    except (
+                        Exception
+                    ) as e:  # Catch broader exceptions during file processing
+                        error_count += 1
+                        # Log exception from file processing loop
+                        log.exception(
+                            "Unexpected error processing file",
+                            file=str(file_path),
+                            error=str(e),
+                        )
 
-                except OSError as e:
-                    error_count += 1
-                    log.error(
-                        "Error processing file", file=str(file_path), error=str(e)
-                    )
-                except Exception:
-                    error_count += 1
-                    log.exception(
-                        "Unexpected error processing file", file=str(file_path)
-                    )
+            # Session commits automatically upon exiting the 'with' block if no exceptions occured
+            log.debug("Session commit (or rollback) handled by context manager.")
 
-        # Commit changes (DuckDB typically auto-commits, but explicit commit is good practice)
-        con.commit()
-        log.debug("Committed changes to database.")
-
-    except duckdb.Error as e:
-        error_count += 1  # Count DB connection/commit errors
-        log.exception("Database error during ingestion", error=str(e), exc_info=True)
-    except Exception:
-        error_count += 1  # Count other unexpected errors
-        log.exception("Unexpected error during ingestion process", exc_info=True)
-    finally:
-        if "con" in locals() and con:
-            con.close()
-            log.debug("Database connection closed after ingestion attempt.")
+    except Exception as e:  # Catch errors related to session creation or commit
+        error_count += 1  # Count DB session/commit errors
+        # Log exception from session management block
+        log.exception("Database session/commit error during ingestion", error=str(e))
+    # No finally block needed for closing connection, session manager handles it
 
     end_time = time.monotonic()
     duration = end_time - start_time
@@ -152,42 +167,80 @@ def ingest_files(source_dir: Path, db_file: Path = DEFAULT_DB_FILE):
 # Example Usage (can be triggered by CLI later)
 if __name__ == "__main__":  # pragma: no cover
     log.info("Running ingestion loader example")
-    # Create a dummy directory and file for testing
-    EXAMPLE_DIR = Path("./example_ingestion_source")
-    EXAMPLE_DIR.mkdir(exist_ok=True)
-    dummy_file = EXAMPLE_DIR / "my_test_file.txt"
-    dummy_file.write_text("This is the content of the test file.\n")
 
-    # Create a subdirectory and another file
+    # Define paths
+    example_db_path = Path("./db/example_ingestion_run.db")
+    EXAMPLE_DIR = Path("./example_ingestion_source")
+
+    # Clean up previous run
+    if example_db_path.exists():
+        example_db_path.unlink()
+    # Clean up and recreate example source dir (optional)
+    # import shutil
+    # if EXAMPLE_DIR.exists():
+    #     shutil.rmtree(EXAMPLE_DIR)
+    EXAMPLE_DIR.mkdir(exist_ok=True)
+
+    # Database initialization is handled within ingest_files now
+    # by calling get_engine and create_db_and_tables
+
+    log.info("Setting up example files...", source_dir=str(EXAMPLE_DIR))
+    # --- Rest of the example setup ---
+    dummy_file = EXAMPLE_DIR / "my_test_file.txt"
+    dummy_file.write_text("This is the content of the test file.\\n")
+
     sub_dir = EXAMPLE_DIR / "subdir"
     sub_dir.mkdir(exist_ok=True)
     dummy_file_2 = sub_dir / "another_file.log"
-    dummy_file_2.write_text("Log line 1\nLog line 2")
+    dummy_file_2.write_text("Log line 1\\nLog line 2")
 
-    # Define a temporary DB for this example run
-    example_db_path = Path("./db/example_ingestion_run.db")
-    if example_db_path.exists():
-        example_db_path.unlink()  # Clean up previous run
+    # Assume a dummy PDF exists at EXAMPLE_DIR / "dummy.pdf" for a full test.
+    # You would need to place one there manually or generate it.
+    # Example dummy PDF creation (requires reportlab):
+    try:
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import letter
+
+        dummy_pdf_path = EXAMPLE_DIR / "dummy.pdf"
+        c = canvas.Canvas(str(dummy_pdf_path), pagesize=letter)
+        c.drawString(100, 750, "This is a dummy PDF document.")
+        c.save()
+        log.info("Created dummy PDF.", path=str(dummy_pdf_path))
+    except ImportError:
+        log.warning("reportlab not installed. Cannot create dummy PDF for example run.")
+    except Exception as pdf_err:
+        log.error("Failed to create dummy PDF.", error=str(pdf_err))
 
     log.info(
         "Ingesting example files", source=str(EXAMPLE_DIR), db=str(example_db_path)
     )
+    # Pass the specific DB path to ensure the correct engine is used
     ingest_files(EXAMPLE_DIR, db_file=example_db_path)
 
     log.info("Checking database content after example ingestion...")
     try:
-        conn = connect_db(db_file=example_db_path)
-        results = conn.execute(
-            "SELECT source_path, filename, size_bytes FROM files"
-        ).fetchall()
-        log.info("Files found in DB", results=results)
-        conn.close()
+        # Use the session to query, getting engine with the correct path
+        engine = get_engine(db_file=example_db_path)
+        with get_session(engine=engine) as session:  # Pass the specific engine
+            repo = FileRepository(session)
+            # Example: Fetch all records
+            from sqlmodel import select
+
+            statement = select(FileRecord)
+            results = session.exec(statement).all()
+            log.info("Files found in DB", count=len(results))
+            for record in results:
+                log.info(
+                    "Record details",
+                    path=record.source_path,
+                    text_present=record.extracted_text is not None,
+                    text_len=len(record.extracted_text) if record.extracted_text else 0,
+                )
+
     except Exception:
         log.exception("Error checking example DB content")
 
-    # Clean up dummy files/dir
-    # dummy_file.unlink()
-    # dummy_file_2.unlink()
-    # sub_dir.rmdir()
-    # EXAMPLE_DIR.rmdir() # Be careful with rmdir if other files exist
-    # print("Cleaned up example files and directory.")
+    # --- Cleanup ---
+    # print("Cleanup: Example directory and DB file left for inspection.")
+    # print(f"DB at: {example_db_path.resolve()}")
+    # print(f"Source dir at: {EXAMPLE_DIR.resolve()}")
