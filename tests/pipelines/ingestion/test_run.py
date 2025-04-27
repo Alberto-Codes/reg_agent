@@ -10,7 +10,7 @@ from sqlalchemy.engine import Engine
 # Module to test
 from reg_agent.pipelines.ingestion.run import run_ingestion_pipeline, DEFAULT_DB_FILE
 # Import task modules to patch them directly if needed
-from reg_agent.pipelines.ingestion import tasks
+# from reg_agent.pipelines.ingestion import tasks
 
 MOCK_SOURCE_DIR = "/mock/source"
 MOCK_DB_FILE = "/mock/db.sqlite"
@@ -50,13 +50,13 @@ def mock_dependencies(mocker):
     mocks["get_engine"] = mocker.patch("reg_agent.core.db.connection.get_engine", return_value=mocks["engine"])
     mocks["create_db"] = mocker.patch("reg_agent.core.db.connection.create_db_and_tables")
 
-    # Mock Tasks (patching in their original modules)
-    mocks["run_task_1"] = mocker.patch("reg_agent.pipelines.ingestion.tasks.task_1.run_task_1", return_value=(10, 2, 0))
-    mocks["run_task_2"] = mocker.patch("reg_agent.pipelines.ingestion.tasks.task_2.run_task_2", return_value=(8, 7, 1, 0))
+    # Mock Tasks (patching functions in their actual module files)
+    mocks["run_task_1"] = mocker.patch("reg_agent.pipelines.ingestion.tasks.task_1_create_records.run_task_1", return_value=(10, 2, 0))
+    mocks["run_task_2"] = mocker.patch("reg_agent.pipelines.ingestion.tasks.task_2_ocr.run_task_2", return_value=(8, 7, 1, 0))
     t3_result = (5, 4, 1)
-    # Need to patch the actual async function object in the tasks module
+    # Patch the async function in its module
     mocks["run_task_3_async"] = AsyncMock(return_value=t3_result)
-    mocker.patch.object(tasks.task_3, "run_task_3", new=mocks["run_task_3_async"])
+    mocker.patch("reg_agent.pipelines.ingestion.tasks.task_3_metadata.run_task_3", new=mocks["run_task_3_async"])
     # Patch asyncio.run where it's used in the run module
     mocks["asyncio_run"] = mocker.patch("reg_agent.pipelines.ingestion.run.asyncio.run", return_value=t3_result)
 
