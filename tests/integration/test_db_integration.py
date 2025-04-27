@@ -12,7 +12,6 @@ from sqlalchemy.engine import Engine
 # Import components to test integration
 from reg_agent.core.db.connection import create_db_and_tables, get_engine
 from reg_agent.core.db.models import FileRecord, FileStatus
-from reg_agent.core.db.repositories import DocumentRepository
 from reg_agent.core.db.unit_of_work import SqlModelUnitOfWork
 
 # Mark all tests in this file as integration tests
@@ -126,7 +125,9 @@ def test_add_and_retrieve_file_record(db_engine: Engine):
                     f"Timestamp mismatch: Retrieved (UTC): {retrieved_ts_aware_rounded}, Original: {timestamp_rounded}"
                 )
             else:
-                pytest.fail("last_modified_ts was None after retrieval, but should not be.")
+                pytest.fail(
+                    "last_modified_ts was None after retrieval, but should not be."
+                )
 
             # --- created_at / updated_at ---
             created_at = retrieved_record.created_at
@@ -146,8 +147,10 @@ def test_add_and_retrieve_file_record(db_engine: Engine):
 
             # Allow a small difference between creation and update time
             assert abs(updated_at_aware - created_at_aware) < datetime.timedelta(
-                seconds=5 # Increased tolerance slightly
-            ), f"created_at ({created_at_aware}) and updated_at ({updated_at_aware}) are too far apart"
+                seconds=5  # Increased tolerance slightly
+            ), (
+                f"created_at ({created_at_aware}) and updated_at ({updated_at_aware}) are too far apart"
+            )
 
     except Exception as e:
         pytest.fail(f"Retrieving record or asserting failed with exception: {e}")
@@ -195,7 +198,9 @@ def test_exists_by_source_path_integration(db_engine: Engine):
     # --- Check non-existent path ---
     try:
         with SqlModelUnitOfWork() as uow:
-            exists_non_existent = uow.documents.exists_by_source_path("/non/existent/path.txt")
+            exists_non_existent = uow.documents.exists_by_source_path(
+                "/non/existent/path.txt"
+            )
     except Exception as e:
         pytest.fail(f"Checking non-existent path failed with exception: {e}")
     assert exists_non_existent is False, "Non-existent path should return False."
@@ -304,6 +309,7 @@ def test_get_records_by_status_integration(db_engine: Engine):
     # assert len(retrieved_pending) == 1
     # assert len(retrieved_completed) == 1
     # assert len(retrieved_failed) == 1
+
 
 # Add tests for find_by_metadata and get_distinct_values if not covered elsewhere
 # (Assuming they have unit tests, integration might be less critical unless complex JSON involved)

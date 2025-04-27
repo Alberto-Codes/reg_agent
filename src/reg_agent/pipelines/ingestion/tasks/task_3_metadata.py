@@ -4,11 +4,13 @@ import asyncio
 from typing import Optional
 
 import structlog
+
 # from sqlalchemy.engine import Engine # Removed
 # from reg_agent.core.db.connection import get_session # Replaced by UoW
-from reg_agent.core.db.models import FileRecord, FileStatus
+from reg_agent.core.db.models import FileStatus
+
 # from reg_agent.core.db.repositories import FileRepository # Replaced by UoW
-from reg_agent.core.db.unit_of_work import SqlModelUnitOfWork # Import UoW
+from reg_agent.core.db.unit_of_work import SqlModelUnitOfWork  # Import UoW
 from reg_agent.services.metadata_service import MetadataExtractionService
 from reg_agent.utils.timing import log_task_duration
 
@@ -16,7 +18,7 @@ log = structlog.get_logger()
 
 
 @log_task_duration("task_3_metadata")
-async def run_task_3(): # Removed engine parameter
+async def run_task_3():  # Removed engine parameter
     """Extracts metadata for records with status PENDING_METADATA using UoW.
 
     Initializes MetadataExtractionService once and processes records within a single UoW.
@@ -35,18 +37,24 @@ async def run_task_3(): # Removed engine parameter
         metadata_service = MetadataExtractionService()
         log.info("MetadataExtractionService initialized for Task 3.")
     except Exception as service_init_err:
-        log.exception("Failed to initialize MetadataExtractionService", error=str(service_init_err))
+        log.exception(
+            "Failed to initialize MetadataExtractionService",
+            error=str(service_init_err),
+        )
         # Cannot proceed without the service
-        return 0, 0, 1 # Return 1 error for service init failure
+        return 0, 0, 1  # Return 1 error for service init failure
 
     try:
         # Wrap entire fetch and process logic in a single UoW
         with SqlModelUnitOfWork() as uow:
             # Fetch records inside the UoW - Include FAILED_METADATA for retry
-            statuses_to_process = [FileStatus.PENDING_METADATA, FileStatus.FAILED_METADATA]
+            statuses_to_process = [
+                FileStatus.PENDING_METADATA,
+                FileStatus.FAILED_METADATA,
+            ]
             log.info("Querying for records with statuses", statuses=statuses_to_process)
             records_to_process = uow.documents.get_records_by_status(
-                statuses_to_process # Pass list as positional argument
+                statuses_to_process  # Pass list as positional argument
             )
             records_found = len(records_to_process)
             log.info(f"Task 3: Found {records_found} records for metadata extraction.")
@@ -59,7 +67,7 @@ async def run_task_3(): # Removed engine parameter
                     success=success_count,
                     errors=error_count,
                 )
-                return records_found, success_count, error_count # Exit early
+                return records_found, success_count, error_count  # Exit early
 
             for record in records_to_process:
                 await asyncio.sleep(2)  # Keep the delay
@@ -71,11 +79,9 @@ async def run_task_3(): # Removed engine parameter
                     )
                     # Update status directly; UoW tracks the change
                     record.status = FileStatus.FAILED_UNKNOWN
-                    log.info(
-                        "Staging status to FAILED_UNKNOWN", record_id=record.id
-                    )
+                    log.info("Staging status to FAILED_UNKNOWN", record_id=record.id)
                     error_count += 1
-                    continue # Move to the next record
+                    continue  # Move to the next record
 
                 # --- Call Metadata Service --- #
                 try:
@@ -128,7 +134,7 @@ async def run_task_3(): # Removed engine parameter
         # Note: Individual record errors inside the loop are already counted.
         # This error count might be slightly off if the commit fails after some successes.
         # A more robust approach might involve tracking IDs intended vs committed.
-        error_count += 1 # Add error for the UoW context issue
+        error_count += 1  # Add error for the UoW context issue
 
     log.info(
         "Task 3 Summary",

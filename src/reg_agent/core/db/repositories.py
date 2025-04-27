@@ -160,7 +160,12 @@ class DocumentRepository(AbstractDocumentRepository):
 
             # Execute with the combined parameters using session.execute
             results = self.session.execute(statement, params_dict).scalars().all()
-            log.info("Found records by metadata", count=len(results), filters=filters, limit=limit)
+            log.info(
+                "Found records by metadata",
+                count=len(results),
+                filters=filters,
+                limit=limit,
+            )
             return list(results)
         except Exception as e:
             log.exception(
@@ -217,7 +222,9 @@ class DocumentRepository(AbstractDocumentRepository):
         # TODO: Make this dynamic (e.g., from config or introspection) if needed
         return ["author", "title", "year", "topic", "case_number"]  # Example fields
 
-    def get_records_by_status(self, status: FileStatus | List[FileStatus]) -> List[FileRecord]:
+    def get_records_by_status(
+        self, status: FileStatus | List[FileStatus]
+    ) -> List[FileRecord]:
         """Retrieves all FileRecords with the specified status or list of statuses."""
         if isinstance(status, list):
             status_values = [s.value for s in status]
@@ -230,12 +237,16 @@ class DocumentRepository(AbstractDocumentRepository):
         try:
             results = self.session.exec(statement).all()
             log.info(
-                "Fetched records by status(es)", status_query=str(status), count=len(results)
+                "Fetched records by status(es)",
+                status_query=str(status),
+                count=len(results),
             )
             return list(results)  # Ensure it's a list
         except Exception as e:
             log.exception(
-                "Error fetching records by status(es)", status_query=str(status), error=str(e)
+                "Error fetching records by status(es)",
+                status_query=str(status),
+                error=str(e),
             )
             raise
 

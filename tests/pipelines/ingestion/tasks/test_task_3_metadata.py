@@ -8,12 +8,14 @@ import pytest
 # from sqlmodel import Session # Removed
 
 from reg_agent.core.db.models import FileRecord, FileStatus
+
 # Keep this for type hinting the mock repository
 from reg_agent.core.db.repositories import DocumentRepository
 from reg_agent.pipelines.ingestion.tasks.task_3_metadata import (
     MetadataExtractionService,
     run_task_3,
 )
+
 # Import UoW for type hinting the mock
 from reg_agent.core.db.unit_of_work import SqlModelUnitOfWork
 from reg_agent.schemas.metadata import RegulationDocumentMetadata
@@ -81,15 +83,16 @@ def pending_metadata_records() -> list[FileRecord]:
             blob=b"pdf1",
             meta_data=None,
         ),
-         FileRecord(
+        FileRecord(
             id=uuid.uuid4(),
-            source_path="/path/file2.txt", # Different type for variety
+            source_path="/path/file2.txt",  # Different type for variety
             status=FileStatus.PENDING_METADATA,
             extracted_text="Sample text for metadata extraction 2.",
             blob=b"txt2",
             meta_data=None,
         ),
     ]
+
 
 # Removed mock_file_repo_task3
 
@@ -109,7 +112,7 @@ async def test_run_task_3_success(
 
     # Patch asyncio.sleep to avoid actual sleeping
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        found, success, errors = await run_task_3() # No engine arg
+        found, success, errors = await run_task_3()  # No engine arg
 
     assert found == 2
     assert success == 2
@@ -145,7 +148,7 @@ async def test_run_task_3_no_records_found(
     mock_repo_instance.get_records_by_status.return_value = []  # Simulate no records
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        found, success, errors = await run_task_3() # No engine arg
+        found, success, errors = await run_task_3()  # No engine arg
 
     assert found == 0
     assert success == 0
@@ -159,7 +162,7 @@ async def test_run_task_3_no_records_found(
 
 @pytest.mark.asyncio
 async def test_run_task_3_no_extracted_text(
-    mock_metadata_service: MagicMock, # Service still needed for init check
+    mock_metadata_service: MagicMock,  # Service still needed for init check
     mock_uow_task3,
     pending_metadata_records,
 ):
@@ -169,16 +172,17 @@ async def test_run_task_3_no_extracted_text(
     pending_metadata_records[0].extracted_text = None
     mock_repo_instance.get_records_by_status.return_value = pending_metadata_records
 
-
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        found, success, errors = await run_task_3() # No engine arg
+        found, success, errors = await run_task_3()  # No engine arg
 
     assert found == 2
-    assert success == 1 # Only the second record succeeds
+    assert success == 1  # Only the second record succeeds
     assert errors == 1  # First record causes an error
     # Ensure metadata extraction was only called for the second record
     mock_metadata_service.extract_metadata.assert_called_once_with(
-        pending_metadata_records[1].extracted_text # Called only with text from record 2
+        pending_metadata_records[
+            1
+        ].extracted_text  # Called only with text from record 2
     )
 
     # Check final status of records
@@ -205,11 +209,11 @@ async def test_run_task_3_metadata_extraction_returns_none(
     )
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        found, success, errors = await run_task_3() # No engine arg
+        found, success, errors = await run_task_3()  # No engine arg
 
     assert found == 2
     assert success == 0
-    assert errors == 2 # Both records fail metadata extraction
+    assert errors == 2  # Both records fail metadata extraction
     assert mock_metadata_service.extract_metadata.call_count == 2
     assert pending_metadata_records[0].status == FileStatus.FAILED_METADATA
     assert pending_metadata_records[1].status == FileStatus.FAILED_METADATA
@@ -233,11 +237,11 @@ async def test_run_task_3_metadata_extraction_exception(
     mock_metadata_service.extract_metadata.side_effect = api_error
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
-        found, success, errors = await run_task_3() # No engine arg
+        found, success, errors = await run_task_3()  # No engine arg
 
     assert found == 2
     assert success == 0
-    assert errors == 2 # Both records fail due to API error
+    assert errors == 2  # Both records fail due to API error
     assert mock_metadata_service.extract_metadata.call_count == 2
     assert pending_metadata_records[0].status == FileStatus.FAILED_METADATA
     assert pending_metadata_records[1].status == FileStatus.FAILED_METADATA
@@ -253,8 +257,8 @@ async def test_run_task_3_service_init_fails(mocker):
     """Test Task 3 when MetadataExtractionService fails to initialize."""
     init_error = RuntimeError("Service init failed")
     mocker.patch(
-         "reg_agent.pipelines.ingestion.tasks.task_3_metadata.MetadataExtractionService",
-         side_effect=init_error
+        "reg_agent.pipelines.ingestion.tasks.task_3_metadata.MetadataExtractionService",
+        side_effect=init_error,
     )
     # Mock UoW to check it's NOT called
     mock_uow_class = mocker.patch(
@@ -266,8 +270,8 @@ async def test_run_task_3_service_init_fails(mocker):
 
     assert found == 0
     assert success == 0
-    assert errors == 1 # The service init failure
-    mock_uow_class.assert_not_called() # UoW should not be entered
+    assert errors == 1  # The service init failure
+    mock_uow_class.assert_not_called()  # UoW should not be entered
 
 
 @pytest.mark.asyncio
@@ -282,21 +286,18 @@ async def test_run_task_3_uow_context_fails(mocker, mock_metadata_service):
     with patch("asyncio.sleep", new_callable=AsyncMock):
         found, success, errors = await run_task_3()
 
-    assert found == 0 # Found count is determined inside UoW
+    assert found == 0  # Found count is determined inside UoW
     assert success == 0
-    assert errors == 1 # The UoW entry failure
+    assert errors == 1  # The UoW entry failure
     mock_metadata_service.extract_metadata.assert_not_called()
-    mock_uow_class.assert_called_once() # UoW class was called
-    mock_uow_class.return_value.__enter__.assert_called_once() # __enter__ was attempted
-    mock_uow_class.return_value.__exit__.assert_not_called() # __exit__ not called
+    mock_uow_class.assert_called_once()  # UoW class was called
+    mock_uow_class.return_value.__enter__.assert_called_once()  # __enter__ was attempted
+    mock_uow_class.return_value.__exit__.assert_not_called()  # __exit__ not called
 
 
 @pytest.mark.asyncio
 async def test_run_task_3_uow_commit_fails(
-    mocker,
-    mock_metadata_service: MagicMock,
-    mock_uow_task3,
-    pending_metadata_records
+    mocker, mock_metadata_service: MagicMock, mock_uow_task3, pending_metadata_records
 ):
     """Test Task 3 when the UoW commit fails after processing."""
     mock_uow_class, mock_uow_instance, mock_repo_instance = mock_uow_task3

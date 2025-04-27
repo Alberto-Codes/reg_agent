@@ -85,4 +85,4 @@ class AbstractDocumentRepository(AbstractRepository[FileRecord, uuid.UUID]):
         Returns:
             A list of queryable metadata field names.
         """
-        raise NotImplementedError 
+        raise NotImplementedError
