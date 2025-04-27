@@ -46,6 +46,8 @@ dev = [
     "mypy>=1.0.0",
     "python-dotenv>=1.1.0",
     "pytest-asyncio>=0.26.0",
+    "logfire>=3.14.1",
+    "pydantic-ai[logfire]>=0.1.6",
 ]
 
 # Coverage configuration

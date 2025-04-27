@@ -131,4 +131,38 @@ async def test_agent_run_specific_query_calls_query_tool(tool_deps, mock_repo):
 # TODO: Add test using TestModel for explore_metadata call
 # TODO: Add test using FunctionModel for more precise control over tool args/flow
 
+@pytest.mark.asyncio
+async def test_agent_run_ambiguous_query_calls_explore_tool(tool_deps, mock_repo):
+    """Test agent calls explore_metadata tool (for fields) for an ambiguous query using TestModel."""
+    # Arrange
+    user_prompt = "Tell me about Wells Fargo cases" # Ambiguous, doesn't specify fields
+    global query_agent
+
+    # Use TestModel to simulate LLM deciding to call the explore tool first
+    test_model = TestModel()
+
+    # Act
+    with capture_run_messages() as messages:
+        with query_agent.override(model=test_model):
+            # We pass the *mocked* deps here
+            await query_agent.run(user_prompt, deps=tool_deps)
+
+    # Assert
+    # Check that the message history contains a tool call part for explore_metadata
+    found_explore_call = False
+    for message in messages:
+        if not message.parts: continue
+        for part in message.parts:
+            if isinstance(part, ToolCallPart) and part.tool_name == 'explore_metadata':
+                found_explore_call = True
+                # Check args are empty or None (TestModel behavior might vary, but should indicate no field specified)
+                assert part.args == {} or part.args is None, f"Expected empty args for explore_metadata (fields), got {part.args}"
+                break
+        if found_explore_call: break
+
+    assert found_explore_call, "explore_metadata tool was not called for ambiguous query"
+    # Check that the *mocked* repository method was called by the tool
+    # explore_metadata with no args should call get_queryable_fields
+    mock_repo.get_queryable_fields.assert_called_once()
+
 # Remove previous test versions if they exist (or ensure file is replaced) 
