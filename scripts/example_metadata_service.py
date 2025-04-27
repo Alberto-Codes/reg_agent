@@ -1,6 +1,7 @@
 # scripts/example_metadata_service.py
 import asyncio
 import logging
+
 import structlog
 
 # Add src to path if running directly might be needed depending on execution context
@@ -9,7 +10,6 @@ import structlog
 # script_dir = Path(__file__).parent
 # project_root = script_dir.parent
 # sys.path.append(str(project_root / 'src'))
-
 from reg_agent.services.metadata_service import MetadataExtractionService
 
 

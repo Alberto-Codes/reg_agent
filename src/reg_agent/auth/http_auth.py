@@ -1,7 +1,6 @@
 # src/reg_agent/auth/http_auth.py
-import google.auth.transport.requests
-import google.oauth2.id_token
 import httpx
+
 from reg_agent.auth.token_manager import ImpersonatedTokenManager
 
 

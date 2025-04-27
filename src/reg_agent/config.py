@@ -1,10 +1,11 @@
 # src/reg_agent/config.py
+import logging
 import os
 import sys
-import logging
+
 import structlog
-from structlog.typing import Processor # Import Processor type
 from dotenv import load_dotenv
+from structlog.typing import Processor  # Import Processor type
 
 # --- Configuration Loading ---
 load_dotenv()  # Load environment variables from .env file
@@ -12,7 +13,7 @@ load_dotenv()  # Load environment variables from .env file
 # --- Logging Configuration ---
 
 # Define processors for structlog
-shared_processors: list[Processor] = [ # Add type hint
+shared_processors: list[Processor] = [  # Add type hint
     structlog.stdlib.filter_by_level,
     structlog.stdlib.add_logger_name,
     structlog.stdlib.add_log_level,
@@ -23,7 +24,8 @@ shared_processors: list[Processor] = [ # Add type hint
 ]
 
 structlog.configure(
-    processors=shared_processors + [
+    processors=shared_processors
+    + [
         # Prepare event dict for standard library formatter
         structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
     ],
@@ -33,7 +35,7 @@ structlog.configure(
 )
 
 # Configure the standard library logging handler
-handler = logging.StreamHandler(sys.stdout) # Log to stdout
+handler = logging.StreamHandler(sys.stdout)  # Log to stdout
 
 # Use structlog's ProcessorFormatter to format records for the handler
 formatter = structlog.stdlib.ProcessorFormatter(
@@ -54,7 +56,7 @@ root_logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
 # Suppress overly verbose loggers if needed (e.g., from libraries)
 # logging.getLogger("some_noisy_library").setLevel(logging.WARNING)
 
-log = structlog.get_logger() # Get the configured logger
+log = structlog.get_logger()  # Get the configured logger
 
 
 def _get_required_env_var(var_name: str) -> str:
@@ -72,14 +74,17 @@ def _get_vertex_model_name() -> str:
     raw_name = os.getenv("VERTEX_MODEL_NAME", "google/gemini-1.5-flash-latest")
     if not raw_name:
         # Handle case where env var is explicitly set to empty string
-        log.warning("VERTEX_MODEL_NAME is empty, using default.", default_name="google/gemini-1.5-flash-latest")
+        log.warning(
+            "VERTEX_MODEL_NAME is empty, using default.",
+            default_name="google/gemini-1.5-flash-latest",
+        )
         raw_name = "google/gemini-1.5-flash-latest"
 
     if "/" not in raw_name:  # Simpler check if prefix is missing
         log.warning(
             "VERTEX_MODEL_NAME potentially missing publisher prefix. Assuming 'google/'.",
             raw_name=raw_name,
-            assumed_prefix="google/"
+            assumed_prefix="google/",
         )
         return f"google/{raw_name}"
     # Consider adding check if prefix is other than 'google/' if needed
@@ -98,11 +103,11 @@ log.info(
     model_name=MODEL_NAME,
     base_url=BASE_URL,
     target_sa=TARGET_SA_NAME_OR_EMAIL if TARGET_SA_NAME_OR_EMAIL else "(Direct ADC)",
-    log_level=logging.getLevelName(root_logger.level) # Corrected function call
+    log_level=logging.getLevelName(root_logger.level),  # Corrected function call
 )
 
 
-if __name__ == "__main__": # pragma: no cover
+if __name__ == "__main__":  # pragma: no cover
     # Example of how to access and print the loaded config
     print(f"Model Name: {MODEL_NAME}")
     print(f"Base URL: {BASE_URL}")

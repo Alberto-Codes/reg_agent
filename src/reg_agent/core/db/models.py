@@ -3,11 +3,11 @@ Defines the SQLModel ORM models for the database.
 """
 
 import uuid
-from datetime import datetime # Import datetime object directly
-from typing import Dict, Optional, Any  # Import Dict
+from datetime import datetime  # Import datetime object directly
 from enum import Enum  # Import Enum
+from typing import Any, Dict, Optional  # Import Dict
 
-from sqlalchemy import TIMESTAMP, Column, LargeBinary  # Import TIMESTAMP, Column, LargeBinary
+from sqlalchemy import Column, LargeBinary  # Import TIMESTAMP, Column, LargeBinary
 from sqlalchemy.types import JSON  # Import JSON
 from sqlmodel import Field, SQLModel
 
@@ -18,14 +18,16 @@ from sqlmodel import Field, SQLModel
 # --- Status Enum --- #
 class FileStatus(str, Enum):
     PENDING_PROCESS = "pending_process"  # Initial state after creation
-    PROCESSING_OCR = "processing_ocr"    # Currently undergoing OCR
+    PROCESSING_OCR = "processing_ocr"  # Currently undergoing OCR
     PENDING_METADATA = "pending_metadata"  # OCR done, waiting for metadata
-    PROCESSING_METADATA = "processing_metadata"  # Currently undergoing metadata extraction
-    COMPLETED = "completed"              # All steps successful
-    SKIPPED_OCR = "skipped_ocr"          # OCR skipped (e.g., not a PDF)
-    FAILED_OCR = "failed_ocr"            # OCR step failed
-    FAILED_METADATA = "failed_metadata"    # Metadata step failed
-    FAILED_UNKNOWN = "failed_unknown"      # Generic failure state
+    PROCESSING_METADATA = (
+        "processing_metadata"  # Currently undergoing metadata extraction
+    )
+    COMPLETED = "completed"  # All steps successful
+    SKIPPED_OCR = "skipped_ocr"  # OCR skipped (e.g., not a PDF)
+    FAILED_OCR = "failed_ocr"  # OCR step failed
+    FAILED_METADATA = "failed_metadata"  # Metadata step failed
+    FAILED_UNKNOWN = "failed_unknown"  # Generic failure state
 
 
 class FileRecord(SQLModel, table=True):

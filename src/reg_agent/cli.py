@@ -1,7 +1,6 @@
 import typer
-# import asyncio # Remove asyncio import
-import structlog
 
+# import asyncio # Remove asyncio import
 # Import command modules
 from reg_agent.commands import ingest_cmd
 

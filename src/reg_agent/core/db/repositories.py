@@ -2,9 +2,10 @@
 Contains repository classes for database interactions.
 """
 
+from typing import List  # Add List for type hinting
+
 import structlog
 from sqlmodel import Session, select
-from typing import List # Add List for type hinting
 
 from reg_agent.core.db.models import FileRecord, FileStatus
 
@@ -31,7 +32,11 @@ class FileRepository:
         Args:
             record: The FileRecord instance to add.
         """
-        log.info("Adding FileRecord to session", source_path=record.source_path, initial_status=record.status)
+        log.info(
+            "Adding FileRecord to session",
+            source_path=record.source_path,
+            initial_status=record.status,
+        )
         try:
             self.session.add(record)
             log.debug("FileRecord added to session successfully", record_id=record.id)
@@ -81,20 +86,24 @@ class FileRepository:
         try:
             statement = select(FileRecord).where(FileRecord.status == status)
             results = self.session.exec(statement).all()
-            log.info("Fetched records by status", status=status.value, count=len(results))
-            return list(results) # Ensure it's a list
+            log.info(
+                "Fetched records by status", status=status.value, count=len(results)
+            )
+            return list(results)  # Ensure it's a list
         except Exception as e:
-            log.exception("Error fetching records by status", status=status.value, error=str(e))
+            log.exception(
+                "Error fetching records by status", status=status.value, error=str(e)
+            )
             raise
 
     def get_records_needing_ocr(self) -> List[FileRecord]:
         """Retrieves all FileRecords where extracted_text is None."""
         log.debug("Fetching records needing OCR")
         try:
-            statement = select(FileRecord).where(FileRecord.extracted_text == None)
+            statement = select(FileRecord).where(FileRecord.extracted_text is None)
             results = self.session.exec(statement).all()
             log.info("Fetched records needing OCR", count=len(results))
-            return list(results) # Ensure it's a list
+            return list(results)  # Ensure it's a list
         except Exception as e:
             log.exception("Error fetching records needing OCR", error=str(e))
             raise
@@ -104,12 +113,11 @@ class FileRepository:
         log.debug("Fetching records needing metadata")
         try:
             statement = select(FileRecord).where(
-                FileRecord.extracted_text != None,
-                FileRecord.meta_data == None
+                FileRecord.extracted_text is not None, FileRecord.meta_data is None
             )
             results = self.session.exec(statement).all()
             log.info("Fetched records needing metadata", count=len(results))
-            return list(results) # Ensure it's a list
+            return list(results)  # Ensure it's a list
         except Exception as e:
             log.exception("Error fetching records needing metadata", error=str(e))
             raise

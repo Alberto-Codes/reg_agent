@@ -2,14 +2,19 @@
 Database connection setup using SQLModel and SQLAlchemy for DuckDB.
 """
 
-from contextlib import contextmanager # Use sync contextmanager
+from contextlib import contextmanager  # Use sync contextmanager
 from pathlib import Path
-from typing import Generator, Optional # Use sync Generator
+from typing import Generator, Optional  # Use sync Generator
 
 import structlog
 from sqlalchemy.engine import Engine
+
 # from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker # No longer needed
-from sqlmodel import Session, SQLModel, create_engine # Use sync Session and create_engine
+from sqlmodel import (
+    Session,
+    SQLModel,
+    create_engine,
+)  # Use sync Session and create_engine
 
 # Import the models so SQLModel knows about them for table creation
 from reg_agent.core.db import (
@@ -30,6 +35,7 @@ _sync_engine: Optional[Engine] = None
 # Remove async session maker
 # _async_session_maker: Optional[async_sessionmaker[AsyncSession]] = None
 
+
 def get_db_url(db_file: Path = DEFAULT_DB_FILE) -> str:
     """Constructs the database URL for DuckDB."""
     db_file.parent.mkdir(parents=True, exist_ok=True)
@@ -37,6 +43,7 @@ def get_db_url(db_file: Path = DEFAULT_DB_FILE) -> str:
     url = f"duckdb:///{absolute_db_path}"
     log.debug("Constructed DB URL", url=url)
     return url
+
 
 def get_engine(db_file: Path = DEFAULT_DB_FILE) -> Engine:
     """Gets the SQLAlchemy synchronous engine."""
@@ -53,6 +60,7 @@ def get_engine(db_file: Path = DEFAULT_DB_FILE) -> Engine:
             raise
     return _sync_engine
 
+
 def create_db_and_tables(engine: Optional[Engine] = None) -> None:
     """Creates the database and all tables defined in SQLModel models using sync engine."""
     sync_engine = engine or get_engine()
@@ -67,13 +75,14 @@ def create_db_and_tables(engine: Optional[Engine] = None) -> None:
         log.exception("Failed to create database tables.", error=str(e))
         raise
 
+
 # Revert to synchronous context manager
 @contextmanager
 def get_session(engine: Optional[Engine] = None) -> Generator[Session, None, None]:
     """Provide a transactional scope around a series of operations (synchronous)."""
     current_engine = engine or get_engine()
     if current_engine is None:
-         raise RuntimeError("Sync engine not initialized.")
+        raise RuntimeError("Sync engine not initialized.")
 
     # Use standard sync Session
     session = Session(current_engine)
@@ -84,18 +93,22 @@ def get_session(engine: Optional[Engine] = None) -> Generator[Session, None, Non
         session.commit()
         log.debug("Sync database session committed.")
     except Exception as e:
-        log.exception("Exception during sync database session, rolling back.", error=str(e))
+        log.exception(
+            "Exception during sync database session, rolling back.", error=str(e)
+        )
         session.rollback()
-        raise # Re-raise the exception after rollback
+        raise  # Re-raise the exception after rollback
     finally:
-         session.close()
-         log.debug("Sync database session closed.")
+        session.close()
+        log.debug("Sync database session closed.")
+
 
 # Revert example to synchronous
 if __name__ == "__main__":  # pragma: no cover
-    import time
     import datetime
-    from sqlmodel import select # Use sync select
+    import time
+
+    from sqlmodel import select  # Use sync select
 
     log.info("Running SYNC SQLModel connection example...")
     try:
@@ -113,10 +126,13 @@ if __name__ == "__main__":  # pragma: no cover
                 size_bytes=len(b"Content from sync main block"),
                 last_modified_ts=datetime.datetime.now(datetime.timezone.utc),
                 extracted_text="# Example Sync Text\nFrom sync main execution.",
-                status=models.FileStatus.PENDING_PROCESS
+                status=models.FileStatus.PENDING_PROCESS,
             )
             session.add(record_to_add)
-            log.info("Record added (sync session - pending commit).", path=record_to_add.source_path)
+            log.info(
+                "Record added (sync session - pending commit).",
+                path=record_to_add.source_path,
+            )
             # Commit happens automatically via with block exit
 
         log.info("Querying records using sync session...")
@@ -127,13 +143,17 @@ if __name__ == "__main__":  # pragma: no cover
             results = session.exec(statement).all()
             log.info(f"Found {len(results)} records:")
             for record in results:
-                text_preview = (record.extracted_text[:30] + "...") if record.extracted_text else "[None]"
+                text_preview = (
+                    (record.extracted_text[:30] + "...")
+                    if record.extracted_text
+                    else "[None]"
+                )
                 log.info(
                     "  Record",
                     filename=record.filename,
                     size=record.size_bytes,
                     text_preview=text_preview,
-                    status=record.status
+                    status=record.status,
                 )
     except Exception as e:
         log.exception("Error during sync connection example", error=str(e))
