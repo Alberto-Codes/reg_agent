@@ -1,5 +1,6 @@
 import json
 import os
+import traceback
 
 import duckdb
 
@@ -13,31 +14,45 @@ else:
         con = duckdb.connect(database=db_path, read_only=True)
         print(f"Successfully connected to {db_path}\n")
 
-        print("Querying records (id, filename, status, meta_data)...")
-        result = con.execute(
-            "SELECT id, filename, status, meta_data FROM filerecord"
+        print("--- Counts by Issuing Agency ---")
+        agency_counts = con.execute(
+            "SELECT meta_data->>'issuing_agency' as agency, COUNT(*) as count "
+            "FROM filerecord GROUP BY agency ORDER BY count DESC"
         ).fetchall()
-
-        if result:
-            for record_id, filename, status, meta_data_json in result:
-                print("---")
-                print(f"ID:       {record_id}")
-                print(f"Filename: {filename}")
-                print(f"Status:   {status}")
-                # Parse and pretty-print the JSON metadata
-                try:
-                    meta_data = json.loads(meta_data_json) if meta_data_json else {}
-                    print(f"Metadata: {json.dumps(meta_data, indent=2)}")
-                except json.JSONDecodeError:
-                    print(f"Metadata: Error decoding JSON -> {meta_data_json}")
-                except TypeError:
-                    print(f"Metadata: Not valid JSON -> {meta_data_json}")
-
+        if agency_counts:
+            for agency, count in agency_counts:
+                print(f"{agency or '[NULL]'}: {count}")
         else:
-            print("\n- No records found.")
+            print("- No data found.")
+
+        # --- Reopen connection before second query (for debugging) ---
+        print("\nDEBUG: Re-establishing connection...")
+        if 'con' in locals() and con: con.close()
+        con = duckdb.connect(database=db_path, read_only=True)
+        # --- End Debug --- 
+
+        print("\n--- Counts by Subject Institution ---")
+        institution_counts = con.execute(
+            "SELECT meta_data->>'subject_institution' as institution, COUNT(*) as count "
+            "FROM filerecord GROUP BY institution ORDER BY count DESC"
+        ).fetchall()
+        if institution_counts:
+            for institution, count in institution_counts:
+                print(f"{institution or '[NULL]'}: {count}")
+        else:
+            print("- No data found.")
 
         con.close()
         print("\nConnection closed.")
 
     except Exception as e:
+        print(f"\n--- ERROR --- ")
         print(f"Error querying database: {e}")
+        print("Traceback:")
+        traceback.print_exc()
+        if 'con' in locals() and con:
+            try:
+                con.close()
+                print("Connection closed after error.")
+            except: # nosec
+                pass
