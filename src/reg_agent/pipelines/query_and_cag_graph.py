@@ -53,21 +53,35 @@ class QueryAgentNode(BaseNode[QueryAndCAGState]):
             raw_output_str = result.output
 
             if isinstance(raw_output_str, str):
-                log.debug("QueryAgent returned a string, attempting extraction and parse.", raw_output_preview=raw_output_str[:200])
+                log.debug(
+                    "QueryAgent returned a string, attempting extraction and parse.",
+                    raw_output_preview=raw_output_str[:200],
+                )
                 json_str_to_parse = raw_output_str.strip()
-                match = re.search(r"```(?:json)?\s*({.*?})\s*```", json_str_to_parse, re.DOTALL | re.IGNORECASE)
+                match = re.search(
+                    r"```(?:json)?\s*({.*?})\s*```",
+                    json_str_to_parse,
+                    re.DOTALL | re.IGNORECASE,
+                )
                 if match:
                     json_str_to_parse = match.group(1).strip()
-                    log.debug("Extracted JSON content from markdown block.", extracted_preview=json_str_to_parse[:200])
+                    log.debug(
+                        "Extracted JSON content from markdown block.",
+                        extracted_preview=json_str_to_parse[:200],
+                    )
 
                 try:
-                    parsed_output = QueryAgentStructuredResult.model_validate_json(json_str_to_parse)
-                    state.query_agent_result = parsed_output # Store parsed result
+                    parsed_output = QueryAgentStructuredResult.model_validate_json(
+                        json_str_to_parse
+                    )
+                    state.query_agent_result = parsed_output  # Store parsed result
 
                     # --- Start: Post-Parsing Validation --- #
                     summary_lower = parsed_output.summary.lower()
                     ids_present = bool(parsed_output.retrieved_doc_ids)
-                    found_indication = "found" in summary_lower and "no" not in summary_lower # Simple check
+                    found_indication = (
+                        "found" in summary_lower and "no" not in summary_lower
+                    )  # Simple check
 
                     if ids_present and not found_indication:
                         if "error" not in summary_lower and "fail" not in summary_lower:
@@ -82,51 +96,81 @@ class QueryAgentNode(BaseNode[QueryAndCAGState]):
                     elif not ids_present and found_indication:
                         # Check if it mentions *too many* results, which is valid for empty IDs
                         if "many" not in summary_lower and "limit" not in summary_lower:
-                             log.warning(
+                            log.warning(
                                 "Validation Mismatch: No IDs present but summary indicates documents found.",
                                 summary=parsed_output.summary,
                             )
-                            # state.error = state.error or "QueryAgent summary inconsistent with lack of document IDs."
+                        # state.error = state.error or "QueryAgent summary inconsistent with lack of document IDs."
 
                     # If no critical validation mismatch, proceed with state update
                     if not state.error:
-                         state.retrieved_doc_ids = parsed_output.retrieved_doc_ids
-                         log.info("QueryAgent finished (JSON parsed & validated).", summary=parsed_output.summary, ids_found=len(state.retrieved_doc_ids or []))
-                         if "error" in summary_lower or "failed" in summary_lower:
-                             if not state.error:
-                                 state.error = f"QueryAgent reported an issue in parsed summary: {parsed_output.summary}"
-                                 log.warning(state.error)
+                        state.retrieved_doc_ids = parsed_output.retrieved_doc_ids
+                        log.info(
+                            "QueryAgent finished (JSON parsed & validated).",
+                            summary=parsed_output.summary,
+                            ids_found=len(state.retrieved_doc_ids or []),
+                        )
+                        if "error" in summary_lower or "failed" in summary_lower:
+                            if not state.error:
+                                state.error = f"QueryAgent reported an issue in parsed summary: {parsed_output.summary}"
+                                log.warning(state.error)
                     else:
                         # If validation above set an error, ensure IDs are null
                         state.retrieved_doc_ids = None
-                        log.warning("Post-parsing validation failed, clearing retrieved IDs.", summary=parsed_output.summary)
+                        log.warning(
+                            "Post-parsing validation failed, clearing retrieved IDs.",
+                            summary=parsed_output.summary,
+                        )
                     # --- End: Post-Parsing Validation --- #
 
                 except (json.JSONDecodeError, ValidationError) as parse_err:
                     log.warning(
                         "Failed to parse/validate extracted QueryAgent output as JSON.",
                         error=str(parse_err),
-                        attempted_json_string=json_str_to_parse[:500] + "..." if len(json_str_to_parse) > 500 else json_str_to_parse,
-                        original_raw_output=raw_output_str[:500] + "..." if len(raw_output_str) > 500 else raw_output_str,
+                        attempted_json_string=json_str_to_parse[:500] + "..."
+                        if len(json_str_to_parse) > 500
+                        else json_str_to_parse,
+                        original_raw_output=raw_output_str[:500] + "..."
+                        if len(raw_output_str) > 500
+                        else raw_output_str,
                     )
                     state.retrieved_doc_ids = None
-                    state.query_agent_result = None # Ensure no partial result is stored
-                    state.error = state.error or f"QueryAgent returned unparsable/invalid JSON: {raw_output_str[:100]}..."
+                    state.query_agent_result = (
+                        None  # Ensure no partial result is stored
+                    )
+                    state.error = (
+                        state.error
+                        or f"QueryAgent returned unparsable/invalid JSON: {raw_output_str[:100]}..."
+                    )
             elif isinstance(raw_output_str, QueryAgentStructuredResult):
                 # Original logic (shouldn't be hit if output_type is commented out)
                 log.info("QueryAgent returned structured output directly.")
                 state.query_agent_result = raw_output_str
                 state.retrieved_doc_ids = raw_output_str.retrieved_doc_ids
-                log.info("QueryAgent finished.", summary=raw_output_str.summary, ids_found=len(state.retrieved_doc_ids or []))
-                if "error" in raw_output_str.summary.lower() or "failed" in raw_output_str.summary.lower():
-                     if not state.error:
-                         state.error = f"QueryAgent reported an issue: {raw_output_str.summary}"
-                         log.warning(state.error)
+                log.info(
+                    "QueryAgent finished.",
+                    summary=raw_output_str.summary,
+                    ids_found=len(state.retrieved_doc_ids or []),
+                )
+                if (
+                    "error" in raw_output_str.summary.lower()
+                    or "failed" in raw_output_str.summary.lower()
+                ):
+                    if not state.error:
+                        state.error = (
+                            f"QueryAgent reported an issue: {raw_output_str.summary}"
+                        )
+                        log.warning(state.error)
             else:
-                log.warning("QueryAgent output was neither string nor QueryAgentResult model", output_type=type(raw_output_str))
+                log.warning(
+                    "QueryAgent output was neither string nor QueryAgentResult model",
+                    output_type=type(raw_output_str),
+                )
                 state.retrieved_doc_ids = None
                 state.query_agent_result = None
-                state.error = state.error or "QueryAgent returned unexpected output type."
+                state.error = (
+                    state.error or "QueryAgent returned unexpected output type."
+                )
 
         except Exception as e:
             log.exception("Error running QueryAgent", exc_info=True)

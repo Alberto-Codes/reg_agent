@@ -1,5 +1,10 @@
 # scripts/run_query_cag_pipeline.py
-"""Example script to run the Query -> CAG graph pipeline."""
+"""
+DEPRECATED: Use the CLI command `uv run python src/reg_agent/cli.py query` instead.
+
+Example script to run the Query -> CAG graph pipeline.
+This script remains for reference or potential debugging scenarios.
+"""
 
 import asyncio
 import os
