@@ -32,8 +32,8 @@ dependencies = [
 
 # Remove the [project.scripts] section entirely if no other scripts exist,
 # or just the reg-agent line if others remain.
-# [project.scripts]
-# reg-agent = "reg_agent.cli:main"
+[project.scripts]
+reg-agent = "reg_agent.cli:app"
 
 [build-system]
 requires = ["hatchling"]
