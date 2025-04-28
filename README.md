@@ -30,27 +30,66 @@ reg_agent/
 ├── scripts/                # Example/utility scripts (e.g., example_metadata_service.py)
 ├── src/
 │   └── reg_agent/
-│       ├── __init__.py
-│       ├── core/           # Foundational components (SQLModel, Repository, etc.)
-│       │   └── db/         # Database connection, models, repositories
-│       ├── pipelines/      # Data processing workflows
-│       │   └── ingestion/  # File ingestion logic
-│       │       ├── __init__.py
-│       │       ├── run.py      # Main pipeline orchestrator
-│       │       └── tasks/      # Individual pipeline task modules
-│       │           ├── __init__.py
-│       │           ├── task_1_create_records.py
-│       │           ├── task_2_ocr.py
-│       │           └── task_3_metadata.py
-│       ├── services/       # Business logic services (OcrService, MetadataExtractionService)
-│       ├── agents/         # LLM Agent implementations and tools (Future)
-│       ├── auth/           # Authentication helpers (TokenManager, HttpAuth)
-│       ├── schemas/        # Pydantic models/schemas (metadata.py)
-│       ├── commands/       # CLI command implementations (ingest_cmd.py)
-│       ├── utils/          # Shared utility functions (downloader, timing)
-│       ├── cli.py          # Main CLI entry point (using Typer)
-│       ├── config.py       # Configuration loading (dotenv)
-│       └── py.typed        # Marker for type checking
+│       │   cli.py
+│       │   config.py
+│       │   py.typed
+│       │   __init__.py
+│       │
+│       ├───agents
+│       │   │   query_agent.py
+│       │   │   __init__.py
+│       │
+│       ├───auth
+│       │   │   http_auth.py
+│       │   │   token_manager.py
+│       │   │   __init__.py
+│       │
+│       ├───commands
+│       │   │   __init__.py # Note: ingest_cmd.py was deleted
+│       │
+│       ├───core
+│       │   │   __init__.py
+│       │   │
+│       │   └───db
+│       │       │   connection.py
+│       │       │   models.py
+│       │       │   repositories.py
+│       │       │   repository_abc.py
+│       │       │   unit_of_work.py
+│       │       │   __init__.py
+│       │
+│       ├───pipelines
+│       │   │   __init__.py
+│       │   │
+│       │   └───ingestion
+│       │       │   graph.py
+│       │       │   run.py
+│       │       │   __init__.py
+│       │       │
+│       │       └───tasks
+│       │           │   task_1_create_records.py
+│       │           │   task_2_ocr.py
+│       │           │   task_3_metadata.py
+│       │           │   __init__.py
+│       │
+│       ├───schemas
+│       │   │   metadata.py
+│       │   │   __init__.py
+│       │
+│       ├───services
+│       │   │   metadata_service.py
+│       │   │   ocr_service.py
+│       │   │   __init__.py
+│       │
+│       ├───tools
+│       │   │   duckdb_tool.py
+│       │   │   __init__.py
+│       │
+│       └───utils
+│           │   downloader.py
+│           │   timing.py
+│           │   __init__.py
+│
 ├── tests/
 │   ├── __init__.py
 │   ├── core/
@@ -59,7 +98,7 @@ reg_agent/
 │   ├── pipelines/
 │   │   └── ingestion/  # Unit tests for ingestion pipeline & tasks
 │   ├── services/       # Unit tests for services
-│   ├── commands/       # Unit tests for CLI commands
+│   ├── commands/       # Test directory exists, but test file was deleted
 │   ├── auth/           # Unit tests for auth components
 │   ├── utils/          # Tests for utilities
 │   └── conftest.py     # Pytest configuration (fixtures, logging setup)
@@ -150,6 +189,40 @@ The pipeline executes the following tasks sequentially:
 1.  **Task 1 (Create Records):** Scans the source directory recursively. For each file, it checks if the file's `source_path` exists in the DB. If not, it reads metadata and blob content, inserting a new `FileRecord` with status `PENDING_PROCESS`.
 2.  **Task 2 (OCR):** Finds records with status `PENDING_PROCESS`. If the file is a PDF, it attempts OCR using `OcrService`. On success, updates the record with `extracted_text` (Markdown) and sets status to `PENDING_METADATA`. On failure or if not a PDF, sets status to `FAILED_OCR` or `SKIPPED_OCR`.
 3.  **Task 3 (Metadata):** Finds records with status `PENDING_METADATA`. It calls the `MetadataExtractionService` to generate structured metadata from the `extracted_text`. On success, updates the `meta_data` field (JSON) and sets status to `COMPLETED`. On failure, sets status to `FAILED_METADATA`. Records without `extracted_text` at this stage are marked `FAILED_UNKNOWN`.
+
+### DuckDB Query Tools (`src/reg_agent/tools/duckdb_tool.py`)
+
+This module provides tools designed for use by `pydantic-ai` agents to interact with the document metadata stored in the DuckDB database. These tools rely on the `DocumentRepository` provided via dependency injection (`DuckDBToolDeps`).
+
+*   **`explore_metadata(field: Optional[str]) -> ExploreMetadataOutput`**
+    *   **Purpose:** Allows the agent to discover queryable metadata fields or the distinct values within a specific field.
+    *   **Behavior:**
+        *   If `field` is `None`, returns a list of all queryable top-level metadata field names (e.g., `['document_type', 'issuing_agency', 'subject_institution']`).
+        *   If `field` is provided, returns a list of distinct values found for that metadata field in the database.
+    *   **Output Model (`ExploreMetadataOutput`):** Contains either `queryable_fields` or `distinct_values`, or an `error` message.
+
+*   **`query_metadata(filters: Dict[str, Union[str, int, float, bool]], limit: Optional[int]) -> QueryMetadataOutput`**
+    *   **Purpose:** Allows the agent to query for documents matching specific, exact metadata criteria.
+    *   **Behavior:** Takes a dictionary of `filters` (e.g., `{'issuing_agency': 'CFPB', 'document_type': 'Consent Order'}`). It finds documents where the metadata matches *all* provided filters. An optional `limit` can cap the number of IDs returned (though the tool itself currently retrieves all matches from the DB before potentially limiting).
+    *   **Output Model (`QueryMetadataOutput`):** Contains `matching_doc_ids` (list of UUIDs), `count` (total number of matching documents found), or an `error` message.
+
+### Query Agent (`src/reg_agent/agents/query_agent.py`)
+
+This agent is designed to answer user questions by querying the document knowledge base using the DuckDB tools.
+
+*   **Framework:** Implemented using `pydantic-ai`.
+*   **Initialization:** Created using the `create_query_agent()` factory function. This function handles setting up the LLM (configured via `.env` for Vertex AI) and injecting the tools.
+*   **Core Logic (Guided by System Prompt):**
+    1.  Analyzes the user's natural language query to understand intent.
+    2.  Determines if the query provides specific filters.
+    3.  **If ambiguous:** Uses `explore_metadata` (first to find relevant fields, then potentially again to find distinct values for those fields) to help formulate specific query criteria.
+    4.  **If specific (or after exploration):** Uses `query_metadata` with the identified exact filters.
+    5.  **Handles Results:** Based on the `count` from `query_metadata`:
+        *   If `count > 10`, it informs the user how many results were found and suggests adding more filters (it does *not* return the list of IDs).
+        *   If `count == 0`, it informs the user that no matching documents were found.
+        *   If `1 <= count <= 10`, the LLM is expected to summarize the findings (the exact format depends on the LLM, but it might list the IDs or provide a brief summary).
+*   **Output:** The agent returns a natural language string response to the user.
+*   **Usage Example:** See the `scripts/run_query_agent.py` script for an example of how to instantiate and run the agent.
 
 ## Development
 

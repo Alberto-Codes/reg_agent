@@ -48,11 +48,12 @@ async def run_ingestion_pipeline(source_dir: Path, db_file: Path = DEFAULT_DB_FI
 
     try:
         # --- Execute the Graph ---
-        log.info("Starting ingestion graph execution...")
-        # Await the async graph execution function
+        # log.info("DEBUG: Attempting graph execution...")
+        # Call ASYNC graph execution function WITH await
         results: Dict[str, Any] = await execute_ingestion_graph(
             source_dir=source_dir, db_file=db_file
         )
+        # log.info("DEBUG: Graph execution attempt finished.")
         log.info("Ingestion graph execution complete.", results=results)
 
         # Check results for errors reported by the graph executor
@@ -70,8 +71,11 @@ async def run_ingestion_pipeline(source_dir: Path, db_file: Path = DEFAULT_DB_FI
         # Catch errors that might occur *outside* the graph execution call itself
         # (e.g., during the initial source_dir check or if execute_ingestion_graph raises unexpectedly)
         log.exception(
-            "An unexpected error occurred during pipeline orchestration.", error=str(e)
+            "An unexpected error occurred during pipeline orchestration (in run.py).",
+            error=str(e),
         )
+        # print(f"ERROR in run_ingestion_pipeline: {e!r}")
+        raise
 
     # Decorator handles the final "Finished task: ingestion_pipeline" log
     # No finally block needed here as graph execution handles its own resources (like DB setup error)

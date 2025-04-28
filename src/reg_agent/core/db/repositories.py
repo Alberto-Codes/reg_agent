@@ -233,12 +233,32 @@ class DocumentRepository(AbstractDocumentRepository):
 
     def get_queryable_fields(self) -> List[str]:
         """
-        Gets the list of metadata keys that are designated as queryable.
-        (Placeholder implementation - returns hardcoded list)
+        Dynamically gets the distinct top-level keys present in the meta_data
+        JSON field across all records where meta_data is not null.
         """
-        log.debug("Returning predefined list of queryable metadata fields")
-        # TODO: Make this dynamic (e.g., from config or introspection) if needed
-        return ["author", "title", "year", "topic", "case_number"]  # Example fields
+        log.debug("Dynamically fetching queryable metadata fields from database")
+        try:
+            # DuckDB query to get all distinct top-level keys from the meta_data JSON
+            # 1. Select meta_data where it's not null
+            # 2. Extract keys using json_keys
+            # 3. Unnest the array of keys into individual rows
+            # 4. Select distinct keys
+            # 5. Order them
+            query = text(
+                "SELECT DISTINCT key "
+                "FROM (SELECT json_keys(meta_data) as keys FROM filerecord WHERE meta_data IS NOT NULL), "
+                "unnest(keys) AS t(key) "
+                "ORDER BY key"
+            )
+            results = self.session.execute(query).scalars().all()
+            log.info(
+                "Found queryable fields dynamically", count=len(results), fields=results
+            )
+            return list(results)  # Ensure it returns a list
+        except Exception as e:
+            log.exception("Error dynamically fetching queryable fields", error=str(e))
+            # Return empty list or re-raise depending on desired error handling
+            return []  # Or raise e
 
     def get_records_by_status(
         self, status: FileStatus | List[FileStatus]

@@ -197,5 +197,8 @@ cython_debug/
 # Ruff stuff:
 .ruff_cache/
 
+# Logfire stuff:
+.logfire/
+
 # PyPI configuration file
 .pypirc

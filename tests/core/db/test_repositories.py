@@ -6,6 +6,7 @@ import datetime
 import uuid
 from datetime import timezone
 from typing import Generator
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
@@ -211,9 +212,73 @@ def test_get_distinct_values(session: Session, repo: DocumentRepository):
 
 def test_get_distinct_values_no_metadata(repo: DocumentRepository):
     """Test getting distinct values when no records have metadata."""
-    distinct_authors = repo.get_distinct_values("author")
-    assert len(distinct_authors) == 0
+    distinct_values = repo.get_distinct_values("some_key")
+    assert distinct_values == []
 
 
 # TODO: Add tests for get_records_needing_ocr, get_records_needing_metadata
 # TODO: Add tests for find_by_metadata (more edge cases?), get_queryable_fields once implemented
+
+# --- Tests for get_queryable_fields ---
+
+
+def test_get_queryable_fields_success(repo: DocumentRepository):
+    """Test get_queryable_fields successfully returns dynamic keys."""
+    # Arrange
+    expected_keys = ["action_items", "document_type", "summary"]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = expected_keys
+
+    # Use patch.object to mock execute on the specific session instance used by the repo
+    with patch.object(
+        repo.session, "execute", return_value=mock_result
+    ) as mock_execute:
+        # Act
+        actual_keys = repo.get_queryable_fields()
+
+    # Assert
+    assert actual_keys == expected_keys
+    mock_execute.assert_called_once()
+    # Check that the correct query text was passed to execute
+    call_args, _ = mock_execute.call_args
+    assert isinstance(call_args[0], object)  # Check it's a TextClause or similar
+    query_text = str(call_args[0])  # Convert SQLAlchemy clause to string
+    assert "SELECT DISTINCT key" in query_text
+    assert "json_keys(meta_data)" in query_text
+    assert "unnest(keys)" in query_text
+    assert "ORDER BY key" in query_text
+
+
+def test_get_queryable_fields_no_metadata(repo: DocumentRepository):
+    """Test get_queryable_fields returns empty list when no records have metadata."""
+    # Arrange
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = []  # Simulate no keys found
+
+    with patch.object(
+        repo.session, "execute", return_value=mock_result
+    ) as mock_execute:
+        # Act
+        actual_keys = repo.get_queryable_fields()
+
+    # Assert
+    assert actual_keys == []
+    mock_execute.assert_called_once()
+
+
+def test_get_queryable_fields_db_error(repo: DocumentRepository):
+    """Test get_queryable_fields handles database errors gracefully."""
+    # Arrange
+    error_message = "Database query failed"
+    # Mock execute to raise an exception
+    with patch.object(
+        repo.session, "execute", side_effect=Exception(error_message)
+    ) as mock_execute:
+        # Act
+        actual_keys = repo.get_queryable_fields()
+
+    # Assert
+    assert (
+        actual_keys == []
+    )  # Expect empty list on error based on current implementation
+    mock_execute.assert_called_once()

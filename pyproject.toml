@@ -30,8 +30,10 @@ dependencies = [
     "pydantic-graph>=0.1.6",
 ]
 
-[project.scripts]
-reg-agent = "reg_agent.cli:app"
+# Remove the [project.scripts] section entirely if no other scripts exist,
+# or just the reg-agent line if others remain.
+# [project.scripts]
+# reg-agent = "reg_agent.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -46,6 +48,8 @@ dev = [
     "mypy>=1.0.0",
     "python-dotenv>=1.1.0",
     "pytest-asyncio>=0.26.0",
+    "logfire>=3.14.1",
+    "pydantic-ai[logfire]>=0.1.6",
 ]
 
 # Coverage configuration
