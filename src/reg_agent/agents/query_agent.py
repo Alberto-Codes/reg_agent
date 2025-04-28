@@ -35,8 +35,16 @@ class QueryAgentResult(BaseModel):
 
 
 # --- Agent Creation Function ---
-def create_query_agent() -> Agent[DuckDBToolDeps, str]:
-    """Sets up dependencies and creates the QueryAgent instance."""
+def create_query_agent(llm: OpenAIModel | None = None) -> Agent[DuckDBToolDeps, str]:
+    """Sets up dependencies and creates the QueryAgent instance.
+
+    Args:
+        llm: An optional pre-initialized LLM instance (e.g., TestModel for testing).
+             If None, a new LLM instance will be created based on config.
+
+    Returns:
+        An initialized Agent instance.
+    """
     log.info("Creating QueryAgent instance...")
 
     # --- Logfire Conditional Setup ---
@@ -59,47 +67,50 @@ def create_query_agent() -> Agent[DuckDBToolDeps, str]:
     else:
         log.info("Logfire instrumentation disabled (ENABLE_LOGFIRE not 'true').")
 
-    # --- LLM Setup (Using config, similar to MetadataExtractionService) ---
-    log.info("Setting up LLM for QueryAgent...")
-    direct_adc_token: str | None = None
-    try:
-        credentials, _ = google.auth.default(
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
-        auth_req = google.auth.transport.requests.Request()
-        credentials.refresh(auth_req)
-        if not credentials.token:
-            log.error("Failed to obtain access token from direct ADC.")
-            raise ValueError("Could not get direct ADC access token.")
-        direct_adc_token = credentials.token
-        log.debug("Obtained direct ADC token for QueryAgent authentication.")
-    except google.auth.exceptions.DefaultCredentialsError as cred_err:
-        log.error(
-            "Failed to find Application Default Credentials (ADC) for QueryAgent. "
-            "Ensure authenticated (e.g., `gcloud auth application-default login`).",
-            exc_info=True,
-        )
-        raise RuntimeError(
-            "QueryAgent LLM setup failed due to missing ADC."
-        ) from cred_err
-    except Exception as adc_err:
-        log.error(
-            "Failed during direct ADC token retrieval for QueryAgent", exc_info=True
-        )
-        raise RuntimeError("QueryAgent LLM setup failed during ADC setup") from adc_err
+    # --- LLM Setup ---
+    if llm is None:
+        log.info("Setting up LLM for QueryAgent from config (no LLM instance provided)...")
+        direct_adc_token: str | None = None
+        try:
+            credentials, _ = google.auth.default(
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+            auth_req = google.auth.transport.requests.Request()
+            credentials.refresh(auth_req)
+            if not credentials.token:
+                log.error("Failed to obtain access token from direct ADC.")
+                raise ValueError("Could not get direct ADC access token.")
+            direct_adc_token = credentials.token
+            log.debug("Obtained direct ADC token for QueryAgent authentication.")
+        except google.auth.exceptions.DefaultCredentialsError as cred_err:
+            log.error(
+                "Failed to find Application Default Credentials (ADC) for QueryAgent. "
+                "Ensure authenticated (e.g., `gcloud auth application-default login`).",
+                exc_info=True,
+            )
+            raise RuntimeError(
+                "QueryAgent LLM setup failed due to missing ADC."
+            ) from cred_err
+        except Exception as adc_err:
+            log.error(
+                "Failed during direct ADC token retrieval for QueryAgent", exc_info=True
+            )
+            raise RuntimeError("QueryAgent LLM setup failed during ADC setup") from adc_err
 
-    if not direct_adc_token:
-        raise RuntimeError("Failed to obtain authentication token for QueryAgent LLM.")
+        if not direct_adc_token:
+            raise RuntimeError("Failed to obtain authentication token for QueryAgent LLM.")
 
-    log.info(
-        "Initializing OpenAIProvider for QueryAgent with direct ADC token",
-        base_url=BASE_URL,
-    )
-    provider = OpenAIProvider(base_url=BASE_URL, api_key=direct_adc_token)
+        log.info(
+            "Initializing OpenAIProvider for QueryAgent with direct ADC token",
+            base_url=BASE_URL,
+        )
+        provider = OpenAIProvider(base_url=BASE_URL, api_key=direct_adc_token)
 
-    log.info("Initializing OpenAIModel for QueryAgent", model_name=MODEL_NAME)
-    llm = OpenAIModel(MODEL_NAME, provider=provider)
-    log.info("LLM setup complete for QueryAgent.")
+        log.info("Initializing OpenAIModel for QueryAgent", model_name=MODEL_NAME)
+        llm = OpenAIModel(MODEL_NAME, provider=provider)
+        log.info("LLM setup complete for QueryAgent.")
+    else:
+        log.info("Using provided LLM instance for QueryAgent (e.g., TestModel).")
 
     # --- Agent Definition ---
     agent = Agent(

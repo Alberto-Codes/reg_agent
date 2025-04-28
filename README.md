@@ -30,27 +30,66 @@ reg_agent/
 ├── scripts/                # Example/utility scripts (e.g., example_metadata_service.py)
 ├── src/
 │   └── reg_agent/
-│       ├── __init__.py
-│       ├── core/           # Foundational components (SQLModel, Repository, etc.)
-│       │   └── db/         # Database connection, models, repositories
-│       ├── pipelines/      # Data processing workflows
-│       │   └── ingestion/  # File ingestion logic
-│       │       ├── __init__.py
-│       │       ├── run.py      # Main pipeline orchestrator
-│       │       └── tasks/      # Individual pipeline task modules
-│       │           ├── __init__.py
-│       │           ├── task_1_create_records.py
-│       │           ├── task_2_ocr.py
-│       │           └── task_3_metadata.py
-│       ├── services/       # Business logic services (OcrService, MetadataExtractionService)
-│       ├── agents/         # LLM Agent implementations and tools (Future)
-│       ├── auth/           # Authentication helpers (TokenManager, HttpAuth)
-│       ├── schemas/        # Pydantic models/schemas (metadata.py)
-│       ├── commands/       # CLI command implementations (ingest_cmd.py)
-│       ├── utils/          # Shared utility functions (downloader, timing)
-│       ├── cli.py          # Main CLI entry point (using Typer)
-│       ├── config.py       # Configuration loading (dotenv)
-│       └── py.typed        # Marker for type checking
+│       │   cli.py
+│       │   config.py
+│       │   py.typed
+│       │   __init__.py
+│       │
+│       ├───agents
+│       │   │   query_agent.py
+│       │   │   __init__.py
+│       │
+│       ├───auth
+│       │   │   http_auth.py
+│       │   │   token_manager.py
+│       │   │   __init__.py
+│       │
+│       ├───commands
+│       │   │   __init__.py # Note: ingest_cmd.py was deleted
+│       │
+│       ├───core
+│       │   │   __init__.py
+│       │   │
+│       │   └───db
+│       │       │   connection.py
+│       │       │   models.py
+│       │       │   repositories.py
+│       │       │   repository_abc.py
+│       │       │   unit_of_work.py
+│       │       │   __init__.py
+│       │
+│       ├───pipelines
+│       │   │   __init__.py
+│       │   │
+│       │   └───ingestion
+│       │       │   graph.py
+│       │       │   run.py
+│       │       │   __init__.py
+│       │       │
+│       │       └───tasks
+│       │           │   task_1_create_records.py
+│       │           │   task_2_ocr.py
+│       │           │   task_3_metadata.py
+│       │           │   __init__.py
+│       │
+│       ├───schemas
+│       │   │   metadata.py
+│       │   │   __init__.py
+│       │
+│       ├───services
+│       │   │   metadata_service.py
+│       │   │   ocr_service.py
+│       │   │   __init__.py
+│       │
+│       ├───tools
+│       │   │   duckdb_tool.py
+│       │   │   __init__.py
+│       │
+│       └───utils
+│           │   downloader.py
+│           │   timing.py
+│           │   __init__.py
+│
 ├── tests/
 │   ├── __init__.py
 │   ├── core/
@@ -59,7 +98,7 @@ reg_agent/
 │   ├── pipelines/
 │   │   └── ingestion/  # Unit tests for ingestion pipeline & tasks
 │   ├── services/       # Unit tests for services
-│   ├── commands/       # Unit tests for CLI commands
+│   ├── commands/       # Test directory exists, but test file was deleted
 │   ├── auth/           # Unit tests for auth components
 │   ├── utils/          # Tests for utilities
 │   └── conftest.py     # Pytest configuration (fixtures, logging setup)

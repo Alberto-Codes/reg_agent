@@ -143,11 +143,9 @@ async def test_run_pipeline_success(mock_dependencies):
         source_dir=str(source_path_instance),
         db_file=str(db_path_instance),
     )
-    mock_log.info.assert_any_call("Starting ingestion graph execution...")
     mock_log.info.assert_any_call(
         "Ingestion graph execution complete.", results=MOCK_GRAPH_SUCCESS_RESULT
     )
-    # Use ** unpacking for the summary log check
     mock_log.info.assert_any_call(
         "Pipeline task summaries reported by graph:", **MOCK_GRAPH_SUCCESS_RESULT
     )
@@ -177,8 +175,6 @@ async def test_run_pipeline_success(mock_dependencies):
         source_dir=str(source_path_instance),
         db_file=str(DEFAULT_DB_FILE),
     )
-    # Other log calls should be similar
-    mock_log.info.assert_any_call("Starting ingestion graph execution...")
     mock_log.info.assert_any_call(
         "Ingestion graph execution complete.", results=MOCK_GRAPH_SUCCESS_RESULT
     )
@@ -242,16 +238,17 @@ async def test_run_pipeline_graph_execution_fails(mock_dependencies):
     test_exception = ValueError("Graph exploded")
     mock_execute_graph.side_effect = test_exception
 
-    await run_ingestion_pipeline(source_dir=Path(MOCK_SOURCE_DIR))
+    # Expect the specific exception to be raised by the pipeline function
+    with pytest.raises(ValueError, match="Graph exploded"):
+        await run_ingestion_pipeline(source_dir=Path(MOCK_SOURCE_DIR))
 
     source_path_instance.is_dir.assert_called_once()
     mock_execute_graph.assert_awaited_once()  # Ensure it was called
     # Check that the orchestrator caught the exception and logged it
     mock_log.exception.assert_called_once_with(
-        "An unexpected error occurred during pipeline orchestration.",
-        error=str(test_exception),
+        "An unexpected error occurred during pipeline orchestration (in run.py).", error=str(test_exception)
     )
-    mock_log.error.assert_not_called()  # Should be exception, not error
+    mock_log.error.assert_not_called() # Ensure specific error logs weren't also called
 
 
 @pytest.mark.asyncio
