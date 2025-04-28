@@ -4,13 +4,9 @@ import asyncio
 import sys
 from pathlib import Path
 
-# Add src directory to sys.path to allow absolute imports
-project_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(project_root / "src"))
-
 from sqlmodel import Session
 
-from reg_agent.agents.query_agent import query_agent  # Import the agent instance
+from reg_agent.agents.query_agent import create_query_agent  # Import the factory function
 from reg_agent.config import log  # Use configured logger
 
 # Adjust DB path relative to project root if needed, or use config
@@ -18,6 +14,9 @@ from reg_agent.config import log  # Use configured logger
 from reg_agent.core.db.connection import get_engine
 from reg_agent.core.db.repositories import DocumentRepository
 from reg_agent.tools.duckdb_tool import DuckDBToolDeps  # Import dependency class
+
+# Define project root relative to the script location
+project_root = Path(__file__).parent.parent
 
 # --- Example Runner Function ---
 
@@ -30,11 +29,15 @@ async def run_query_agent_example(user_query: str, repo: DocumentRepository):
     deps = DuckDBToolDeps(repo=repo)
 
     try:
+        # Create the agent instance first
+        agent_instance = create_query_agent()
+        log.info("Query agent instance created.")
+
         # Run the agent
         # Use capture_run_messages to inspect the conversation if needed for debugging
         # from pydantic_ai import capture_run_messages
         # with capture_run_messages() as captured_messages:
-        result = await query_agent.run(user_query, deps=deps)
+        result = await agent_instance.run(user_query, deps=deps)
 
         # Process the result (which will be a string by default)
         log.info("Agent finished successfully.", output=result.output)

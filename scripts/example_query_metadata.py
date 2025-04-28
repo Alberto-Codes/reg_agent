@@ -37,5 +37,5 @@ else:
             try:
                 con.close()
                 print("Connection closed after error.")
-            except:  # nosec
+            except Exception:  # Catch Exception explicitly
                 pass

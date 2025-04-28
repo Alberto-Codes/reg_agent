@@ -9,9 +9,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.models import Usage
 from sqlmodel import Session
 
-# Add src directory to sys.path
-project_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(project_root / "src"))
+
 
 from reg_agent.core.db.connection import get_engine
 from reg_agent.core.db.repositories import DocumentRepository
@@ -25,6 +23,8 @@ from reg_agent.tools.duckdb_tool import (
 
 log = structlog.get_logger()
 
+# Define project root relative to the script location
+project_root = Path(__file__).parent.parent
 
 async def main():
     # --- Database Setup ---
