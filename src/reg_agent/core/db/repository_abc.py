@@ -88,3 +88,18 @@ class AbstractDocumentRepository(AbstractRepository[FileRecord, uuid.UUID]):
             A list of queryable metadata field names.
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def get_extracted_text_by_ids(
+        self, ids: List[uuid.UUID]
+    ) -> dict[uuid.UUID, str | None]:
+        """Retrieves the extracted text for a list of FileRecord UUIDs.
+
+        Args:
+            ids: A list of UUIDs to fetch text for.
+
+        Returns:
+            A dictionary mapping each requested UUID to its extracted_text (or None if missing).
+            UUIDs not found in the database will be omitted from the dictionary.
+        """
+        raise NotImplementedError

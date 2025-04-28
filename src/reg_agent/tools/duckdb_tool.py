@@ -63,6 +63,21 @@ class QueryMetadataOutput(BaseModel):
     error: Optional[str] = Field(None, description="Error message if operation failed.")
 
 
+# --- Input/Output Models for Fetch Text Tool ---
+class FetchTextByIdsInput(BaseModel):
+    doc_ids: List[uuid.UUID] = Field(
+        ..., description="List of document UUIDs to fetch extracted text for."
+    )
+
+
+class FetchTextByIdsOutput(BaseModel):
+    texts: Dict[uuid.UUID, Optional[str]] = Field(
+        ...,
+        description="Dictionary mapping document UUIDs to their extracted text. Value is None if text is missing.",
+    )
+    error: Optional[str] = Field(None, description="Error message if operation failed.")
+
+
 # --- Tool Functions ---
 
 # Note: These functions will be decorated with @agent.tool later when the agent is defined.
@@ -138,3 +153,23 @@ async def query_metadata(
         return QueryMetadataOutput(
             matching_doc_ids=[], count=0, error=f"{error_msg}: {e}"
         )
+
+
+async def fetch_text_by_ids(
+    ctx: RunContext[DuckDBToolDeps], params: FetchTextByIdsInput
+) -> FetchTextByIdsOutput:
+    """
+    Fetches the extracted text content for a given list of document UUIDs.
+    """
+    repo = ctx.deps.repo
+    log.info("Running fetch_text_by_ids tool", count=len(params.doc_ids))
+    try:
+        text_map = await asyncio.to_thread(
+            repo.get_extracted_text_by_ids, params.doc_ids
+        )
+        log.info("Successfully fetched text for IDs", found_count=len(text_map))
+        return FetchTextByIdsOutput(texts=text_map, error=None)
+    except Exception as e:
+        error_msg = "Error fetching text for IDs"
+        log.exception(error_msg, error=e)
+        return FetchTextByIdsOutput(texts={}, error=f"{error_msg}: {e}")
