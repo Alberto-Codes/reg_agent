@@ -91,12 +91,14 @@ def create_cag_agent(llm: OpenAIModel | None = None) -> Agent[DuckDBToolDeps, st
             "You will be given the user's original query and a list of document IDs.\n\n"
             "**Workflow:**\n"
             "1.  Use the `fetch_text_by_ids` tool to retrieve the text content for ALL the provided document IDs.\n"
-            "2.  If the tool returns an error or no text is found for any relevant ID, state that you cannot answer without the document content.\n"
-            "3.  Combine the retrieved text excerpts.\n"
-            "4.  Analyze the combined text in relation to the user's original query.\n"
-            "5.  Synthesize a concise answer to the query based *solely* on the information present in the retrieved text.\n"
-            "6.  If the text does not contain information relevant to the query, state that the provided documents do not contain the answer.\n"
-            "7.  Do NOT use any prior knowledge or external information. Stick strictly to the provided document content."
+            "2.  **Identify Missing Content:** Check the result from the tool. Note which document IDs returned valid text content and which returned nothing (e.g., `None` or an empty string) or resulted in an error for that specific ID.\n"
+            "3.  **Proceed if Content Exists:** If at least one document ID returned valid text, proceed to the next step. If NO valid text was retrieved for ANY of the requested IDs (due to errors or missing content for all), state that you cannot answer because the required document content could not be accessed.\n"
+            "4.  **Combine Available Text:** Combine the text excerpts ONLY from the documents that were successfully retrieved.\n"
+            "5.  **Analyze Available Text:** Analyze the combined available text in relation to the user's original query.\n"
+            "6.  **Synthesize Answer:** Synthesize a concise answer to the query based *solely* on the information present in the available retrieved text.\n"
+            "7.  **Mention Missing Content:** If any document IDs failed to return content (as identified in step 2), explicitly mention in your final answer which document IDs could not be included in the analysis due to missing or inaccessible content.\n"
+            "8.  **No Relevant Info:** If the available text does not contain information relevant to the query, state that the analyzed documents do not contain the answer.\n"
+            "9.  **Adhere Strictly:** Do NOT use any prior knowledge or external information. Stick strictly to the provided document content."
         ),
         # output_type=CAGAgentResult, # Optional: Use if structured output is desired
         instrument=instrument_flag,

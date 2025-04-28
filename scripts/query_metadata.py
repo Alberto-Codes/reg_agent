@@ -13,34 +13,17 @@ else:
         con = duckdb.connect(database=db_path, read_only=True)
         print(f"Successfully connected to {db_path}\n")
 
-        print("--- Counts by Issuing Agency ---")
-        agency_counts = con.execute(
-            "SELECT meta_data->>'issuing_agency' as agency, COUNT(*) as count "
-            "FROM filerecord GROUP BY agency ORDER BY count DESC"
+        print("--- Distinct Document Types ---")
+        doc_types = con.execute(
+            "SELECT DISTINCT meta_data->>'document_type' as doc_type "
+            "FROM filerecord ORDER BY doc_type"
         ).fetchall()
-        if agency_counts:
-            for agency, count in agency_counts:
-                print(f"{agency or '[NULL]'}: {count}")
-        else:
-            print("- No data found.")
 
-        # --- Reopen connection before second query (for debugging) ---
-        print("\nDEBUG: Re-establishing connection...")
-        if "con" in locals() and con:
-            con.close()
-        con = duckdb.connect(database=db_path, read_only=True)
-        # --- End Debug ---
-
-        print("\n--- Counts by Subject Institution ---")
-        institution_counts = con.execute(
-            "SELECT meta_data->>'subject_institution' as institution, COUNT(*) as count "
-            "FROM filerecord GROUP BY institution ORDER BY count DESC"
-        ).fetchall()
-        if institution_counts:
-            for institution, count in institution_counts:
-                print(f"{institution or '[NULL]'}: {count}")
+        if doc_types:
+            for (doc_type,) in doc_types: # Unpack the tuple
+                print(f"- {doc_type or '[NULL]'}")
         else:
-            print("- No data found.")
+            print("- No document types found.")
 
         con.close()
         print("\nConnection closed.")
