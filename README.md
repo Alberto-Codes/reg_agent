@@ -190,6 +190,40 @@ The pipeline executes the following tasks sequentially:
 2.  **Task 2 (OCR):** Finds records with status `PENDING_PROCESS`. If the file is a PDF, it attempts OCR using `OcrService`. On success, updates the record with `extracted_text` (Markdown) and sets status to `PENDING_METADATA`. On failure or if not a PDF, sets status to `FAILED_OCR` or `SKIPPED_OCR`.
 3.  **Task 3 (Metadata):** Finds records with status `PENDING_METADATA`. It calls the `MetadataExtractionService` to generate structured metadata from the `extracted_text`. On success, updates the `meta_data` field (JSON) and sets status to `COMPLETED`. On failure, sets status to `FAILED_METADATA`. Records without `extracted_text` at this stage are marked `FAILED_UNKNOWN`.
 
+### DuckDB Query Tools (`src/reg_agent/tools/duckdb_tool.py`)
+
+This module provides tools designed for use by `pydantic-ai` agents to interact with the document metadata stored in the DuckDB database. These tools rely on the `DocumentRepository` provided via dependency injection (`DuckDBToolDeps`).
+
+*   **`explore_metadata(field: Optional[str]) -> ExploreMetadataOutput`**
+    *   **Purpose:** Allows the agent to discover queryable metadata fields or the distinct values within a specific field.
+    *   **Behavior:**
+        *   If `field` is `None`, returns a list of all queryable top-level metadata field names (e.g., `['document_type', 'issuing_agency', 'subject_institution']`).
+        *   If `field` is provided, returns a list of distinct values found for that metadata field in the database.
+    *   **Output Model (`ExploreMetadataOutput`):** Contains either `queryable_fields` or `distinct_values`, or an `error` message.
+
+*   **`query_metadata(filters: Dict[str, Union[str, int, float, bool]], limit: Optional[int]) -> QueryMetadataOutput`**
+    *   **Purpose:** Allows the agent to query for documents matching specific, exact metadata criteria.
+    *   **Behavior:** Takes a dictionary of `filters` (e.g., `{'issuing_agency': 'CFPB', 'document_type': 'Consent Order'}`). It finds documents where the metadata matches *all* provided filters. An optional `limit` can cap the number of IDs returned (though the tool itself currently retrieves all matches from the DB before potentially limiting).
+    *   **Output Model (`QueryMetadataOutput`):** Contains `matching_doc_ids` (list of UUIDs), `count` (total number of matching documents found), or an `error` message.
+
+### Query Agent (`src/reg_agent/agents/query_agent.py`)
+
+This agent is designed to answer user questions by querying the document knowledge base using the DuckDB tools.
+
+*   **Framework:** Implemented using `pydantic-ai`.
+*   **Initialization:** Created using the `create_query_agent()` factory function. This function handles setting up the LLM (configured via `.env` for Vertex AI) and injecting the tools.
+*   **Core Logic (Guided by System Prompt):**
+    1.  Analyzes the user's natural language query to understand intent.
+    2.  Determines if the query provides specific filters.
+    3.  **If ambiguous:** Uses `explore_metadata` (first to find relevant fields, then potentially again to find distinct values for those fields) to help formulate specific query criteria.
+    4.  **If specific (or after exploration):** Uses `query_metadata` with the identified exact filters.
+    5.  **Handles Results:** Based on the `count` from `query_metadata`:
+        *   If `count > 10`, it informs the user how many results were found and suggests adding more filters (it does *not* return the list of IDs).
+        *   If `count == 0`, it informs the user that no matching documents were found.
+        *   If `1 <= count <= 10`, the LLM is expected to summarize the findings (the exact format depends on the LLM, but it might list the IDs or provide a brief summary).
+*   **Output:** The agent returns a natural language string response to the user.
+*   **Usage Example:** See the `scripts/run_query_agent.py` script for an example of how to instantiate and run the agent.
+
 ## Development
 
 ### Running Tests
