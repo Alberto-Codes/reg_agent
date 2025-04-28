@@ -3,11 +3,12 @@ Contains repository classes for database interactions.
 """
 
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import structlog
 from sqlalchemy import and_, text
-from sqlmodel import Session, select
+from sqlalchemy.sql.elements import ColumnClause, ColumnElement
+from sqlmodel import Session, select, func
 
 from reg_agent.core.db.models import FileRecord, FileStatus
 from reg_agent.core.db.repository_abc import AbstractDocumentRepository
@@ -267,10 +268,15 @@ class DocumentRepository(AbstractDocumentRepository):
         if isinstance(status, list):
             status_values = [s.value for s in status]
             log.debug("Fetching records by list of statuses", statuses=status_values)
-            statement = select(FileRecord).where(FileRecord.status.in_(status_values))
+            statement = select(FileRecord).where(
+                cast(ColumnClause[FileStatus], FileRecord.status).in_(status_values)
+            )
         elif isinstance(status, FileStatus):
             log.debug("Fetching records by single status", status=status.value)
             statement = select(FileRecord).where(FileRecord.status == status)
+        else:
+            log.error("Unexpected type for status argument", status_type=type(status))
+            raise TypeError("status must be FileStatus or List[FileStatus]")
 
         try:
             results = self.session.exec(statement).all()
@@ -312,6 +318,75 @@ class DocumentRepository(AbstractDocumentRepository):
             return list(results)  # Ensure it's a list
         except Exception as e:
             log.exception("Error fetching records needing metadata", error=str(e))
+            raise
+
+    def get_extracted_text_by_ids(
+        self, ids: List[uuid.UUID]
+    ) -> dict[uuid.UUID, str | None]:
+        """
+        Retrieves the extracted text for a list of FileRecord UUIDs.
+
+        Args:
+            ids: A list of UUIDs to fetch text for.
+
+        Returns:
+            A dictionary mapping each requested UUID to its extracted_text (or None if missing).
+            UUIDs not found in the database will be omitted from the dictionary.
+        """
+        if not ids:
+            log.debug("get_extracted_text_by_ids called with empty list.")
+            return {}
+
+        log.debug("Fetching extracted text for multiple IDs", count=len(ids))
+        try:
+            # Select only the id and extracted_text columns for efficiency
+            statement = select(FileRecord.id, FileRecord.extracted_text).where(
+                cast(ColumnClause[uuid.UUID], FileRecord.id).in_(ids)
+            )
+            results = self.session.exec(statement).all()
+
+            # Create the result dictionary
+            text_map: dict[uuid.UUID, str | None] = {
+                record_id: text for record_id, text in results
+            }
+
+            found_count = len(text_map)
+            log.info(
+                "Fetched extracted text for IDs",
+                requested_count=len(ids),
+                found_count=found_count,
+            )
+            # Optional: Log if some requested IDs were not found
+            if found_count < len(ids):
+                requested_set: set[uuid.UUID] = set(ids)
+                found_set = set(text_map.keys())
+                missing_ids = list(requested_set - found_set)
+                log.warning(
+                    "Some requested IDs not found in DB", missing_ids=missing_ids
+                )
+
+            return text_map
+        except Exception as e:
+            log.exception(
+                "Error fetching extracted text by IDs",
+                requested_count=len(ids),
+                error=str(e),
+            )
+            raise
+
+    def get_total_document_count(self) -> int:
+        """Returns the total number of FileRecord entries in the database."""
+        log.debug("Getting total document count")
+        try:
+            # Explicitly cast FileRecord.id to ColumnElement for func.count
+            statement = select(func.count(cast(ColumnElement, FileRecord.id)))
+            # Use .one_or_none() on the result of session.exec()
+            result = self.session.exec(statement)
+            count = result.one_or_none()
+            log.info("Retrieved total document count", count=count)
+            return count if count is not None else 0
+        except Exception as e:
+            log.exception("Error getting total document count", error=str(e))
             raise
 
     # Add other necessary methods here later, e.g.:

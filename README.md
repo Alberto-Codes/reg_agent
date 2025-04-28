@@ -2,7 +2,12 @@
 
 A Python agent framework designed to manage and interact with a knowledge base of documents, initially focused on regulatory enforcement actions.
 
-The core functionality involves ingesting files into a DuckDB database, extracting text content (especially from PDFs using Docling), generating structured metadata using LLMs via Vertex AI, and providing tools for future agents to query and reason about the stored information.
+The core functionality involves:
+*   Ingesting files into a DuckDB database.
+*   Extracting text content (especially from PDFs using Docling).
+*   Generating structured metadata using LLMs via Vertex AI.
+*   Providing a Query-CAG (Content Augmented Generation) pipeline where an agent first searches metadata, retrieves document IDs, fetches the corresponding text, and then generates an answer grounded in the document content.
+*   Providing tools for agents to query and reason about the stored information.
 
 This project is managed using `uv` for dependency management and `ruff` for linting/formatting.
 
@@ -14,6 +19,10 @@ This project is managed using `uv` for dependency management and `ruff` for lint
     1.  **Record Creation:** Scans directories, reads file metadata, and creates initial `FileRecord` entries, skipping duplicates based on `source_path`.
     2.  **OCR Extraction:** Integrates with the `docling` library (`OcrService`) to automatically extract Markdown text from PDF files and store it in `extracted_text`.
     3.  **LLM Metadata Extraction:** Uses `pydantic-ai` (`MetadataExtractionService`) with Google Vertex AI (via its OpenAI-compatible endpoint) to analyze `extracted_text` and generate structured metadata (e.g., `document_type`, `issuing_agency`, `summary`), storing it in the `meta_data` JSON field.
+*   **Query Pipeline (Query-CAG):** Provides a CLI (`reg-agent query <USER_QUERY>`) to execute a query pipeline using `pydantic-graph` orchestration:
+    1.  **Query Agent:** Analyzes the user query, uses metadata tools (`explore_metadata`, `query_metadata`) to find relevant document IDs based on metadata filters.
+    2.  **CAG Agent (Conditional):** If document IDs are found, fetches the `extracted_text` for those documents (using `fetch_text_by_ids` tool) and generates an answer based on the retrieved content and the original user query.
+    3.  **Formatting:** Prepares the final output string for the user, either the CAG result or the Query Agent's summary/error.
 *   **Flexible Authentication:** Supports multiple Google Cloud authentication methods for the LLM service:
     *   **Direct ADC:** Uses Application Default Credentials found in the environment.
     *   **Impersonated ADC:** Uses the caller's ADC to impersonate a target service account (`TARGET_SA_NAME_OR_EMAIL`), generating short-lived tokens automatically via `ImpersonatedTokenManager`.
@@ -27,41 +36,45 @@ reg_agent/
 ├── data/                   # Sample data for ingestion (not checked into git)
 ├── db/                     # Stores the DuckDB database file(s) (ignored by git)
 ├── logs/                   # Stores timestamped log files from runs (ignored by git)
-├── scripts/                # Example/utility scripts (e.g., example_metadata_service.py)
+├── scripts/                # Example/utility scripts (e.g., example_metadata_service.py, example_run_query_agent.py)
 ├── src/
 │   └── reg_agent/
-│       │   cli.py
-│       │   config.py
+│       │   cli.py          # Main CLI entry point (Typer)
+│       │   config.py       # Configuration loading and logging setup
 │       │   py.typed
 │       │   __init__.py
 │       │
-│       ├───agents
+│       ├───agents          # Agent implementations (pydantic-ai)
+│       │   │   cag_agent.py
 │       │   │   query_agent.py
 │       │   │   __init__.py
 │       │
-│       ├───auth
+│       ├───auth            # Authentication helpers (GCP ADC, Impersonation)
 │       │   │   http_auth.py
 │       │   │   token_manager.py
 │       │   │   __init__.py
 │       │
-│       ├───commands
-│       │   │   __init__.py # Note: ingest_cmd.py was deleted
+│       ├───commands        # CLI command modules (e.g., for ingest, query)
+│       │   │   query_cmd.py
+│       │   │   ingest_cmd.py
+│       │   │   __init__.py
 │       │
-│       ├───core
+│       ├───core            # Core data models, DB interactions, abstractions
 │       │   │   __init__.py
 │       │   │
 │       │   └───db
-│       │       │   connection.py
-│       │       │   models.py
-│       │       │   repositories.py
-│       │       │   repository_abc.py
-│       │       │   unit_of_work.py
+│       │       │   connection.py       # DB engine setup
+│       │       │   models.py           # SQLModel table definitions
+│       │       │   repositories.py     # Data access logic (Repository pattern)
+│       │       │   repository_abc.py   # Abstract base class for repository
+│       │       │   unit_of_work.py     # Unit of Work pattern implementation
 │       │       │   __init__.py
 │       │
-│       ├───pipelines
+│       ├───pipelines       # Pipeline orchestration logic
+│       │   │   query_and_cag_graph.py # Query->CAG graph definition (pydantic-graph)
 │       │   │   __init__.py
 │       │   │
-│       │   └───ingestion
+│       │   └───ingestion     # Ingestion pipeline graph and tasks
 │       │       │   graph.py
 │       │       │   run.py
 │       │       │   __init__.py
@@ -72,25 +85,25 @@ reg_agent/
 │       │           │   task_3_metadata.py
 │       │           │   __init__.py
 │       │
-│       ├───schemas
+│       ├───schemas         # Pydantic schemas (e.g., for metadata)
 │       │   │   metadata.py
 │       │   │   __init__.py
 │       │
-│       ├───services
+│       ├───services        # Business logic services (OCR, Metadata Extraction)
 │       │   │   metadata_service.py
 │       │   │   ocr_service.py
 │       │   │   __init__.py
 │       │
-│       ├───tools
+│       ├───tools           # Tools for agents (e.g., DB interaction tools)
 │       │   │   duckdb_tool.py
 │       │   │   __init__.py
 │       │
-│       └───utils
+│       └───utils           # Utility functions (downloading, timing)
 │           │   downloader.py
 │           │   timing.py
 │           │   __init__.py
 │
-├── tests/
+├── tests/                  # Pytest tests mirroring src structure
 │   ├── __init__.py
 │   ├── core/
 │   │   └── db/         # Unit tests for DB components
@@ -160,14 +173,19 @@ reg_agent/
 
 ## Usage
 
-The primary interaction is through the `reg-agent` CLI command.
+The primary interaction is through the `reg-agent` CLI command, run via `uv`.
 
-### File Ingestion Pipeline
+**Note:** Scripts in the `scripts/` directory (e.g., `example_run_query_agent.py`) are primarily for reference, debugging, or demonstrating specific components. Use the CLI commands below for standard operations.
+
+### CLI Commands
+
+#### File Ingestion Pipeline
 
 To run the full ingestion pipeline (record creation, OCR, metadata extraction) on files from a source directory:
 
 ```bash
-reg-agent ingest run <SOURCE_DIRECTORY> [--db-path <PATH>] [--recreate-db]
+# Ensure you are in the project root directory
+uv run python src/reg_agent/cli.py ingest run <SOURCE_DIRECTORY> [--db-path <PATH>] [--recreate-db]
 ```
 
 *   `<SOURCE_DIRECTORY>`: (Required) The path to the directory containing files to ingest (e.g., `./data`).
@@ -177,22 +195,47 @@ reg-agent ingest run <SOURCE_DIRECTORY> [--db-path <PATH>] [--recreate-db]
 **Examples:**
 
 ```bash
-# Run full pipeline on ./data into the default ./db/regulations.db
+# Run full ingestion pipeline on ./data into the default ./db/regulations.db
 # This will create records, extract text from PDFs, and extract metadata via LLM.
-reg-agent ingest run ./data
+uv run python src/reg_agent/cli.py ingest run ./data
 
 # Ingest files into a specific database, deleting it first if it exists
-reg-agent ingest run ./other_files --db-path ./other_archive.db --recreate-db
+uv run python src/reg_agent/cli.py ingest run ./other_files --db-path ./other_archive.db --recreate-db
 ```
 
-The pipeline executes the following tasks sequentially:
-1.  **Task 1 (Create Records):** Scans the source directory recursively. For each file, it checks if the file's `source_path` exists in the DB. If not, it reads metadata and blob content, inserting a new `FileRecord` with status `PENDING_PROCESS`.
-2.  **Task 2 (OCR):** Finds records with status `PENDING_PROCESS`. If the file is a PDF, it attempts OCR using `OcrService`. On success, updates the record with `extracted_text` (Markdown) and sets status to `PENDING_METADATA`. On failure or if not a PDF, sets status to `FAILED_OCR` or `SKIPPED_OCR`.
-3.  **Task 3 (Metadata):** Finds records with status `PENDING_METADATA`. It calls the `MetadataExtractionService` to generate structured metadata from the `extracted_text`. On success, updates the `meta_data` field (JSON) and sets status to `COMPLETED`. On failure, sets status to `FAILED_METADATA`. Records without `extracted_text` at this stage are marked `FAILED_UNKNOWN`.
+*(See Core Features section for details on the ingestion task stages)*
+
+#### Query Documents (Query-CAG Pipeline)
+
+To ask questions about the ingested documents using the Query-CAG pipeline:
+
+```bash
+# Ensure you are in the project root directory
+uv run python src/reg_agent/cli.py query "<YOUR_QUERY_HERE>" [--db-path <PATH>]
+```
+
+*   `<YOUR_QUERY_HERE>`: (Required) Your natural language query about the documents, enclosed in quotes.
+*   `--db-path PATH` (Optional): The path to the DuckDB database file. Defaults to `./db/regulations.db`.
+
+**Workflow:**
+1.  The `QueryAgent` analyzes your query and uses tools to search the database **metadata**.
+2.  If relevant document IDs are found, the `CAGAgent` fetches the **text content** of those documents.
+3.  The `CAGAgent` then generates an answer based on the **document content** and your original query.
+4.  If no documents are found via metadata search, or if an error occurs, a summary or error message is returned.
+
+**Examples:**
+
+```bash
+# Ask about documents related to a specific institution
+uv run python src/reg_agent/cli.py query "Find Consent Orders issued by the CFPB for Wells Fargo"
+
+# Ask a question that might require exploring metadata first
+uv run python src/reg_agent/cli.py query "Which agencies have issued orders?"
+```
 
 ### DuckDB Query Tools (`src/reg_agent/tools/duckdb_tool.py`)
 
-This module provides tools designed for use by `pydantic-ai` agents to interact with the document metadata stored in the DuckDB database. These tools rely on the `DocumentRepository` provided via dependency injection (`DuckDBToolDeps`).
+This module provides tools designed for use by `pydantic-ai` agents to interact with the document metadata and text stored in the DuckDB database. These tools rely on the `DocumentRepository` provided via dependency injection (`DuckDBToolDeps`).
 
 *   **`explore_metadata(field: Optional[str]) -> ExploreMetadataOutput`**
     *   **Purpose:** Allows the agent to discover queryable metadata fields or the distinct values within a specific field.
@@ -205,6 +248,11 @@ This module provides tools designed for use by `pydantic-ai` agents to interact 
     *   **Purpose:** Allows the agent to query for documents matching specific, exact metadata criteria.
     *   **Behavior:** Takes a dictionary of `filters` (e.g., `{'issuing_agency': 'CFPB', 'document_type': 'Consent Order'}`). It finds documents where the metadata matches *all* provided filters. An optional `limit` can cap the number of IDs returned (though the tool itself currently retrieves all matches from the DB before potentially limiting).
     *   **Output Model (`QueryMetadataOutput`):** Contains `matching_doc_ids` (list of UUIDs), `count` (total number of matching documents found), or an `error` message.
+
+*   **`fetch_text_by_ids(doc_ids: List[str]) -> FetchTextByIdsOutput`**
+    *   **Purpose:** Allows the agent (specifically the CAG agent) to retrieve the extracted text content for a list of document IDs.
+    *   **Behavior:** Takes a list of document UUIDs (as strings) and returns a dictionary mapping each found ID to its `extracted_text`.
+    *   **Output Model (`FetchTextByIdsOutput`):** Contains `texts` (a `Dict[str, str]` mapping UUID string to text) or an `error` message.
 
 ### Query Agent (`src/reg_agent/agents/query_agent.py`)
 

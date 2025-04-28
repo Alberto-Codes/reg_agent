@@ -1,6 +1,8 @@
 # src/reg_agent/agents/query_agent.py
 
 import os
+import uuid
+from typing import List, Optional
 
 import google.auth
 import google.auth.transport.requests
@@ -15,6 +17,7 @@ from reg_agent.tools.duckdb_tool import (
     DuckDBToolDeps,
     explore_metadata,
     query_metadata,
+    count_documents,
 )
 
 
@@ -22,15 +25,21 @@ from reg_agent.tools.duckdb_tool import (
 # Define what structured output you expect from the agent's final response
 # For now, let's assume it might return a summary or the raw result IDs
 class QueryAgentResult(BaseModel):
-    summary: str = Field(description="A summary of the findings or the direct answer.")
-    retrieved_doc_ids: list[str] = Field(
-        default_factory=list, description="List of relevant document UUIDs found."
+    summary: str = Field(
+        description="A summary of the findings, actions taken, or the direct answer. Explain if IDs are returned or if refinement is needed."
+    )
+    retrieved_doc_ids: Optional[List[uuid.UUID]] = Field(
+        default=None,
+        description="List of relevant document UUIDs found (max 10). None if >10 results or 0 results.",
     )
     # Add other fields as needed, e.g., error messages from the agent itself
 
 
 # --- Agent Creation Function ---
-def create_query_agent(llm: OpenAIModel | None = None) -> Agent[DuckDBToolDeps, str]:
+# Restore original return type hint
+def create_query_agent(
+    llm: OpenAIModel | None = None,
+) -> Agent[DuckDBToolDeps, QueryAgentResult | str]:  # Allow string for now
     """Sets up dependencies and creates the QueryAgent instance.
 
     Args:
@@ -118,33 +127,39 @@ def create_query_agent(llm: OpenAIModel | None = None) -> Agent[DuckDBToolDeps, 
         log.info("Using provided LLM instance for QueryAgent (e.g., TestModel).")
 
     # --- Agent Definition ---
-    agent = Agent(
+    agent = Agent[DuckDBToolDeps, QueryAgentResult | str](
         model=llm,
         deps_type=DuckDBToolDeps,
-        tools=[explore_metadata, query_metadata],
+        tools=[explore_metadata, query_metadata, count_documents],
         instructions=(
-            "You are an expert assistant specialized in querying a document database via its metadata.\n"
+            "You are an expert assistant specialized in querying a document database via its metadata or getting document counts.\n"
             "Your primary goal is to translate the user's natural language request into an effective query using the available tools.\n\n"
+            "**Available Tools:**\n"
+            "- `explore_metadata`: Discover queryable fields or distinct values for a field.\n"
+            "- `query_metadata`: Find documents matching specific metadata filters.\n"
+            "- `count_documents`: Get the total number of documents in the database.\n\n"
+            "**VERY IMPORTANT:** Your final response MUST be ONLY a single, valid JSON string conforming exactly to the following Pydantic model structure:\n"
+            "```json\n"
+            "{\n"
+            "  'summary': 'string', /* A summary of findings, actions, or errors */\n"
+            "  'retrieved_doc_ids': ['uuid'] | null /* List of UUIDs (max 10) or null (only if query_metadata was used and returned 0 or >10 results) */\n"
+            "}\n"
+            "```\n"
+            "Do NOT add any introductory text, explanations, apologies, reasoning, or markdown formatting (like ```json) around the JSON output. The JSON string itself should be the entire response.\n\n"
             "**Workflow:**\n"
-            "1.  **Analyze Intent:** Carefully determine the user's objective and the key concepts or entities they are asking about.\n"
-            "2.  **Assess Specificity:**\n"
-            "    *   **Specific Query:** If the user provides clear metadata fields and values (e.g., 'issuing_agency=CFPB', 'document_type=Consent Order'), proceed directly to step 4.\n"
-            "    *   **Ambiguous Query:** If the query is broad, conceptual, or lacks specific filters (e.g., 'Tell me about Wells Fargo cases', 'Find documents on sales practices'), proceed to step 3.\n"
-            "3.  **Explore (if ambiguous):**\n"
-            "    *   Use the `explore_metadata` tool. Start by exploring the available *fields* to understand the search possibilities.\n"
-            "    *   Based on the user's query and the available fields, identify potentially relevant fields (e.g., for 'Wells Fargo cases', explore values for 'subject_institution', 'key_topics').\n"
-            "    *   Use `explore_metadata` again to get distinct *values* for those 1-2 most relevant fields to discover specific terms (e.g., find 'Wells Fargo Bank, N.A.' is a value for 'subject_institution').\n"
-            "4.  **Query:**\n"
-            "    *   Construct the best possible `query_metadata` call using the specific filters identified either directly from the user's request or discovered through exploration.\n"
-            "    *   Prioritize using exact matches found via exploration (e.g., use `subject_institution='Wells Fargo Bank, N.A.'` instead of just 'Wells Fargo'). The `query_metadata` tool has a `count` field in its output indicating the total number of matches found (even if only a subset of IDs are returned).\n"
-            "5.  **Refine (if necessary):**\n"
-            "    *   **Too Many Results:** Check the `count` field in the `query_metadata` tool output. If `count` > 10, DO NOT list the document IDs. Instead, inform the user you found many results (state the exact count) and suggest adding filters based on other relevant fields (e.g., `key_topics`, `document_type`). You might know relevant fields from prior exploration steps.\n"
-            "    *   **No Results:** If `query_metadata` returns no results, inform the user. You could suggest broadening the search slightly or exploring values for a different field.\n\n"
-            "**Tool Usage Guidance:**\n"
-            "*   Use `explore_metadata` primarily to discover *options* (available fields and specific values) when the user's query isn't precise enough for `query_metadata`.\n"
-            "*   Use `query_metadata` as the primary tool to retrieve document IDs once you have formulated specific filter criteria.\n"
-            "*   Return a clear summary of your findings or actions to the user."
+            "1.  **Analyze Intent:** Determine if the user wants to explore, query by metadata, or count documents.\n"
+            "2.  **Choose Tool:** Select the appropriate tool (`explore_metadata`, `query_metadata`, or `count_documents`).\n"
+            "3.  **Execute Tool:** Call the chosen tool. For `query_metadata`, if the query is ambiguous, use `explore_metadata` first.\n"
+            "4.  **Format Final JSON Output:** Based on the results of the tool calls:\n"
+            "    *   **`count_documents` Success:** Construct the JSON with a summary reporting the count and `retrieved_doc_ids` as `null`.\n"
+            "    *   **`explore_metadata` Success:** Construct the JSON with a summary describing the fields/values found and `retrieved_doc_ids` as `null`.\n"
+            "    *   **`query_metadata` Success (1-10 results):** Construct the JSON with a success summary and the list of UUIDs in `retrieved_doc_ids`.\n"
+            "    *   **`query_metadata` Success (>10 results):** Construct the JSON with `retrieved_doc_ids` as `null` and a summary indicating too many results (mention the count).\n"
+            "    *   **`query_metadata` Success (0 results):** Construct the JSON with `retrieved_doc_ids` as `null` and a summary indicating no results found.\n"
+            "    *   **Any Tool Error:** Construct the JSON with `retrieved_doc_ids` as `null` and a summary explaining the tool error encountered.\n"
+            "Remember, the final output MUST be ONLY the JSON string."
         ),
+        # output_type=QueryAgentResult, # Keep commented out
         instrument=instrument_flag,
     )
 

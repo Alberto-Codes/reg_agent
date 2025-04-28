@@ -5,12 +5,6 @@ import sys
 from pathlib import Path
 
 import rich
-import structlog
-
-# Add src directory to sys.path to allow absolute imports
-project_root = Path(__file__).resolve().parents[1]
-src_path = project_root / "src"
-sys.path.insert(0, str(src_path))
 
 from sqlmodel import Session
 
@@ -22,8 +16,6 @@ from reg_agent.config import log  # Use configured logger
 # from reg_agent.config import settings # If settings has db_path
 from reg_agent.core.db.connection import get_engine  # Import DB utils
 from reg_agent.core.db.repositories import DocumentRepository  # Import repo
-
-log = structlog.get_logger()
 
 # --- Main Execution Block ---
 

@@ -63,9 +63,41 @@ class QueryMetadataOutput(BaseModel):
     error: Optional[str] = Field(None, description="Error message if operation failed.")
 
 
+# --- Input/Output Models for Fetch Text Tool ---
+class FetchTextByIdsInput(BaseModel):
+    doc_ids: List[uuid.UUID] = Field(
+        ..., description="List of document UUIDs to fetch extracted text for."
+    )
+
+
+class FetchTextByIdsOutput(BaseModel):
+    texts: Dict[uuid.UUID, Optional[str]] = Field(
+        ...,
+        description="Dictionary mapping document UUIDs to their extracted text. Value is None if text is missing.",
+    )
+    error: Optional[str] = Field(None, description="Error message if operation failed.")
+
+
 # --- Tool Functions ---
 
-# Note: These functions will be decorated with @agent.tool later when the agent is defined.
+# Note: PydanticAI uses the function docstring as the tool description for the LLM.
+# The @tool decorator is not needed if functions are passed directly to Agent(tools=[...])
+
+
+async def count_documents(ctx: RunContext[DuckDBToolDeps]) -> int:
+    """Returns the total number of documents currently stored in the database."""
+    repo = ctx.deps.repo
+    log.info("Running count_documents tool")
+    try:
+        count = await asyncio.to_thread(repo.get_total_document_count)
+        log.info("Count documents result", count=count)
+        return count
+    except Exception as e:
+        # For a simple count, maybe returning 0 or -1 is better than raising?
+        # Or log and return a specific error code/message? Let's return 0 for now.
+        error_msg = "Error counting documents"
+        log.exception(error_msg, error=e)
+        return -1  # Indicate error
 
 
 async def explore_metadata(
@@ -138,3 +170,23 @@ async def query_metadata(
         return QueryMetadataOutput(
             matching_doc_ids=[], count=0, error=f"{error_msg}: {e}"
         )
+
+
+async def fetch_text_by_ids(
+    ctx: RunContext[DuckDBToolDeps], params: FetchTextByIdsInput
+) -> FetchTextByIdsOutput:
+    """
+    Fetches the extracted text content for a given list of document UUIDs.
+    """
+    repo = ctx.deps.repo
+    log.info("Running fetch_text_by_ids tool", count=len(params.doc_ids))
+    try:
+        text_map = await asyncio.to_thread(
+            repo.get_extracted_text_by_ids, params.doc_ids
+        )
+        log.info("Successfully fetched text for IDs", found_count=len(text_map))
+        return FetchTextByIdsOutput(texts=text_map, error=None)
+    except Exception as e:
+        error_msg = "Error fetching text for IDs"
+        log.exception(error_msg, error=e)
+        return FetchTextByIdsOutput(texts={}, error=f"{error_msg}: {e}")
