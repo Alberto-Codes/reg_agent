@@ -7,8 +7,8 @@ from typing import Any, Dict, List, Optional, cast
 
 import structlog
 from sqlalchemy import and_, text
-from sqlalchemy.sql.elements import ColumnClause
-from sqlmodel import Session, select
+from sqlalchemy.sql.elements import ColumnClause, ColumnElement
+from sqlmodel import Session, select, func
 
 from reg_agent.core.db.models import FileRecord, FileStatus
 from reg_agent.core.db.repository_abc import AbstractDocumentRepository
@@ -372,6 +372,21 @@ class DocumentRepository(AbstractDocumentRepository):
                 requested_count=len(ids),
                 error=str(e),
             )
+            raise
+
+    def get_total_document_count(self) -> int:
+        """Returns the total number of FileRecord entries in the database."""
+        log.debug("Getting total document count")
+        try:
+            # Explicitly cast FileRecord.id to ColumnElement for func.count
+            statement = select(func.count(cast(ColumnElement, FileRecord.id)))
+            # Use .one_or_none() on the result of session.exec()
+            result = self.session.exec(statement)
+            count = result.one_or_none()
+            log.info("Retrieved total document count", count=count)
+            return count if count is not None else 0
+        except Exception as e:
+            log.exception("Error getting total document count", error=str(e))
             raise
 
     # Add other necessary methods here later, e.g.:

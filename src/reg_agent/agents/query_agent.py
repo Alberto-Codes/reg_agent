@@ -17,6 +17,7 @@ from reg_agent.tools.duckdb_tool import (
     DuckDBToolDeps,
     explore_metadata,
     query_metadata,
+    count_documents,
 )
 
 
@@ -126,31 +127,36 @@ def create_query_agent(
         log.info("Using provided LLM instance for QueryAgent (e.g., TestModel).")
 
     # --- Agent Definition ---
-    agent = Agent[DuckDBToolDeps, QueryAgentResult](
+    agent = Agent[DuckDBToolDeps, QueryAgentResult | str](
         model=llm,
         deps_type=DuckDBToolDeps,
-        tools=[explore_metadata, query_metadata],
+        tools=[explore_metadata, query_metadata, count_documents],
         instructions=(
-            "You are an expert assistant specialized in querying a document database via its metadata.\n"
+            "You are an expert assistant specialized in querying a document database via its metadata or getting document counts.\n"
             "Your primary goal is to translate the user's natural language request into an effective query using the available tools.\n\n"
+            "**Available Tools:**\n"
+            "- `explore_metadata`: Discover queryable fields or distinct values for a field.\n"
+            "- `query_metadata`: Find documents matching specific metadata filters.\n"
+            "- `count_documents`: Get the total number of documents in the database.\n\n"
             "**VERY IMPORTANT:** Your final response MUST be ONLY a single, valid JSON string conforming exactly to the following Pydantic model structure:\n"
             "```json\n"
             "{\n"
             "  'summary': 'string', /* A summary of findings, actions, or errors */\n"
-            "  'retrieved_doc_ids': ['uuid'] | null /* List of UUIDs (max 10) or null */\n"
+            "  'retrieved_doc_ids': ['uuid'] | null /* List of UUIDs (max 10) or null (only if query_metadata was used and returned 0 or >10 results) */\n"
             "}\n"
             "```\n"
             "Do NOT add any introductory text, explanations, apologies, reasoning, or markdown formatting (like ```json) around the JSON output. The JSON string itself should be the entire response.\n\n"
             "**Workflow:**\n"
-            "1.  **Analyze Intent:** Determine the user's objective.\n"
-            "2.  **Assess Specificity:** If specific filters are given, go to step 4. If ambiguous, go to step 3.\n"
-            "3.  **Explore (if ambiguous):** Use `explore_metadata` (first for fields, then potentially for values) to discover specific filter terms.\n"
-            "4.  **Query:** Use `query_metadata` with the identified filters.\n"
-            "5.  **Format Final JSON Output:** Based on the results of the tool calls:\n"
-            "    *   **Success (1-10 results):** Construct the JSON with a success summary and the list of UUIDs in `retrieved_doc_ids`.\n"
-            "    *   **Too Many Results (>10):** Construct the JSON with `retrieved_doc_ids` as `null` and a summary indicating too many results (mention the count).\n"
-            "    *   **No Results (0):** Construct the JSON with `retrieved_doc_ids` as `null` and a summary indicating no results found.\n"
-            "    *   **Tool Error:** Construct the JSON with `retrieved_doc_ids` as `null` and a summary explaining the tool error encountered.\n"
+            "1.  **Analyze Intent:** Determine if the user wants to explore, query by metadata, or count documents.\n"
+            "2.  **Choose Tool:** Select the appropriate tool (`explore_metadata`, `query_metadata`, or `count_documents`).\n"
+            "3.  **Execute Tool:** Call the chosen tool. For `query_metadata`, if the query is ambiguous, use `explore_metadata` first.\n"
+            "4.  **Format Final JSON Output:** Based on the results of the tool calls:\n"
+            "    *   **`count_documents` Success:** Construct the JSON with a summary reporting the count and `retrieved_doc_ids` as `null`.\n"
+            "    *   **`explore_metadata` Success:** Construct the JSON with a summary describing the fields/values found and `retrieved_doc_ids` as `null`.\n"
+            "    *   **`query_metadata` Success (1-10 results):** Construct the JSON with a success summary and the list of UUIDs in `retrieved_doc_ids`.\n"
+            "    *   **`query_metadata` Success (>10 results):** Construct the JSON with `retrieved_doc_ids` as `null` and a summary indicating too many results (mention the count).\n"
+            "    *   **`query_metadata` Success (0 results):** Construct the JSON with `retrieved_doc_ids` as `null` and a summary indicating no results found.\n"
+            "    *   **Any Tool Error:** Construct the JSON with `retrieved_doc_ids` as `null` and a summary explaining the tool error encountered.\n"
             "Remember, the final output MUST be ONLY the JSON string."
         ),
         # output_type=QueryAgentResult, # Keep commented out

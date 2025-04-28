@@ -80,8 +80,23 @@ class FetchTextByIdsOutput(BaseModel):
 
 # --- Tool Functions ---
 
-# Note: These functions will be decorated with @agent.tool later when the agent is defined.
+# Note: PydanticAI uses the function docstring as the tool description for the LLM.
+# The @tool decorator is not needed if functions are passed directly to Agent(tools=[...])
 
+async def count_documents(ctx: RunContext[DuckDBToolDeps]) -> int:
+    """Returns the total number of documents currently stored in the database."""
+    repo = ctx.deps.repo
+    log.info("Running count_documents tool")
+    try:
+        count = await asyncio.to_thread(repo.get_total_document_count)
+        log.info("Count documents result", count=count)
+        return count
+    except Exception as e:
+        # For a simple count, maybe returning 0 or -1 is better than raising?
+        # Or log and return a specific error code/message? Let's return 0 for now.
+        error_msg = "Error counting documents"
+        log.exception(error_msg, error=e)
+        return -1 # Indicate error
 
 async def explore_metadata(
     ctx: RunContext[DuckDBToolDeps], params: ExploreMetadataInput
