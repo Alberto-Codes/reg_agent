@@ -20,7 +20,7 @@ else:
         ).fetchall()
 
         if doc_types:
-            for (doc_type,) in doc_types: # Unpack the tuple
+            for (doc_type,) in doc_types:  # Unpack the tuple
                 print(f"- {doc_type or '[NULL]'}")
         else:
             print("- No document types found.")

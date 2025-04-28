@@ -38,8 +38,8 @@ class QueryAndCAGState(BaseModel):
 # --- Node Definitions --- #
 
 
-class QueryAgentNode(BaseNode[QueryAndCAGState]):
-    async def run(self, ctx: GraphRunContext[QueryAndCAGState]) -> ShouldRunCAGNode:
+class QueryAgentNode(BaseNode[QueryAndCAGState, DuckDBToolDeps, None]):
+    async def run(self, ctx: GraphRunContext[QueryAndCAGState, DuckDBToolDeps]) -> ShouldRunCAGNode:
         state = ctx.state
         log.info("Running QueryAgentNode", user_query=state.user_query)
         if not state.deps:
@@ -182,9 +182,9 @@ class QueryAgentNode(BaseNode[QueryAndCAGState]):
         return ShouldRunCAGNode()
 
 
-class ShouldRunCAGNode(BaseNode[QueryAndCAGState]):
+class ShouldRunCAGNode(BaseNode[QueryAndCAGState, DuckDBToolDeps]):
     async def run(
-        self, ctx: GraphRunContext[QueryAndCAGState]
+        self, ctx: GraphRunContext[QueryAndCAGState, DuckDBToolDeps]
     ) -> CAGAgentNode | FormatOutputNode:
         state = ctx.state
         log.info(
@@ -200,8 +200,10 @@ class ShouldRunCAGNode(BaseNode[QueryAndCAGState]):
             return FormatOutputNode()  # Skip CAG if error or no IDs
 
 
-class CAGAgentNode(BaseNode[QueryAndCAGState]):
-    async def run(self, ctx: GraphRunContext[QueryAndCAGState]) -> "FormatOutputNode":
+class CAGAgentNode(BaseNode[QueryAndCAGState, DuckDBToolDeps]):
+    async def run(
+        self, ctx: GraphRunContext[QueryAndCAGState, DuckDBToolDeps]
+    ) -> FormatOutputNode:
         state = ctx.state
         log.info("Running CAGAgentNode", doc_ids=state.retrieved_doc_ids)
         # Basic checks (should be guaranteed by ShouldRunCAGNode routing, but belt-and-suspenders)
@@ -214,7 +216,7 @@ class CAGAgentNode(BaseNode[QueryAndCAGState]):
                 has_deps=bool(state.deps),
                 has_ids=bool(state.retrieved_doc_ids),
             )
-            return FormatOutputNode()  # Go to format node to report error
+            return FormatOutputNode()
 
         try:
             cag_agent = create_cag_agent()
@@ -228,13 +230,19 @@ class CAGAgentNode(BaseNode[QueryAndCAGState]):
         except Exception as e:
             log.exception("Error running CAGAgent", exc_info=True)
             state.error = state.error or f"CAGAgent failed: {e}"
+            # Ensure cag_agent_raw_output is None on error if it wasn't set
+            state.cag_agent_raw_output = None
+            # Return only node even in except block
+            return FormatOutputNode()
 
         # Always transition to format node after CAG attempt
         return FormatOutputNode()
 
 
-class FormatOutputNode(BaseNode[QueryAndCAGState]):
-    async def run(self, ctx: GraphRunContext[QueryAndCAGState]) -> End[Any]:
+class FormatOutputNode(BaseNode[QueryAndCAGState, DuckDBToolDeps]):
+    async def run(
+        self, ctx: GraphRunContext[QueryAndCAGState, DuckDBToolDeps]
+    ) -> End[Any]:
         state = ctx.state
         log.info("Running FormatOutputNode")
         if state.error:
@@ -259,10 +267,10 @@ class FormatOutputNode(BaseNode[QueryAndCAGState]):
 
 
 # --- Graph Definition --- #
-def create_query_cag_graph() -> Graph[QueryAndCAGState]:
+def create_query_cag_graph() -> Graph[QueryAndCAGState, DuckDBToolDeps]:
     """Creates the Query -> CAG Pydantic Graph."""
     # Graph initialized with node classes and state type
-    graph = Graph[QueryAndCAGState](
+    graph = Graph[QueryAndCAGState, DuckDBToolDeps](
         nodes=(
             QueryAgentNode,
             ShouldRunCAGNode,
