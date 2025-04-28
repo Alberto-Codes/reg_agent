@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 import rich
-import structlog
 
 from sqlmodel import Session
 
