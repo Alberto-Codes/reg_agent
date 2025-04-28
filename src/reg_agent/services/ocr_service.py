@@ -21,7 +21,7 @@ from docling.datamodel.pipeline_options import (
 # Removed unused DoclingDocument import for now
 # from docling.datamodel.document import DoclingDocument
 from docling.document_converter import DocumentConverter, PdfFormatOption
-
+from docling.backend.docling_parse_v4_backend import DoclingParseV4DocumentBackend
 # Configure logger
 log = structlog.get_logger()
 
@@ -59,7 +59,8 @@ class OcrService:
 
             pdf_pipeline_options = PdfPipelineOptions(
                 accelerator_options=accelerator_options,
-                do_ocr=True,  # Explicitly enable OCR
+                do_ocr=False,
+                do_table_structure=False,
                 # Add other options like table structure if needed later
                 # do_table_structure=True,
                 # table_structure_options=TableStructureOptions(do_cell_matching=True)
@@ -70,6 +71,7 @@ class OcrService:
                 format_options={
                     InputFormat.PDF: PdfFormatOption(
                         pipeline_options=pdf_pipeline_options,
+                        backend=DoclingParseV4DocumentBackend
                     )
                 }
             )
@@ -165,78 +167,3 @@ class OcrService:
             return None  # Ensure None is returned on unexpected error
 
         return markdown_text
-
-
-# Example usage for debugging
-if __name__ == "__main__":  # pragma: no cover
-    # Basic logging setup for direct script execution
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-    # Minimal structlog setup for this block
-    structlog.configure(
-        wrapper_class=structlog.stdlib.BoundLogger,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        processors=[
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
-        ],
-    )
-    formatter = structlog.stdlib.ProcessorFormatter(
-        processor=structlog.dev.ConsoleRenderer(),
-    )
-    handler = logging.StreamHandler()
-    handler.setFormatter(formatter)
-    root_logger = logging.getLogger()
-    root_logger.addHandler(handler)
-    root_logger.setLevel(logging.INFO)
-
-    log.info("Running OcrService example...")
-
-    try:
-        # More robust way to find project root
-        PROJECT_ROOT_DIR = Path(__file__).resolve().parent.parent.parent.parent
-        DATA_DIR = PROJECT_ROOT_DIR / "data"
-        # Sample PDF file
-        sample_pdf_path = DATA_DIR / "NRSRO_SEC_Letter_to_DBRS_Inc_02032011.pdf"
-
-        if not sample_pdf_path.is_file():
-            log.error("Sample PDF not found.", path=str(sample_pdf_path))
-        else:
-            log.info("Creating OcrService instance...")
-            ocr_service = OcrService()
-
-            if ocr_service.converter:
-                log.info("Attempting extraction...", path=str(sample_pdf_path))
-                extracted_markdown = ocr_service.extract_markdown_from_file(
-                    sample_pdf_path
-                )
-
-                if extracted_markdown:
-                    log.info(
-                        "Markdown extracted successfully.",
-                        length=len(extracted_markdown),
-                    )
-                    output_file_path = PROJECT_ROOT_DIR / "temp_extracted_text.md"
-                    try:
-                        output_file_path.write_text(
-                            extracted_markdown, encoding="utf-8"
-                        )
-                        log.info("Full text saved.", path=str(output_file_path))
-                    except IOError as io_err:
-                        log.error(
-                            "Failed to write output file.",
-                            path=str(output_file_path),
-                            error=str(io_err),
-                        )
-                else:
-                    log.warning("Failed to extract Markdown from sample PDF.")
-            else:
-                log.error("OcrService failed to initialize DocumentConverter.")
-
-    except Exception as main_err:
-        log.exception(
-            "Error in OcrService example __main__ block.", error=str(main_err)
-        )
-
-    log.info("OcrService example finished.")

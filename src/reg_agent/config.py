@@ -69,7 +69,7 @@ structlog.configure(
 console_handler = logging.StreamHandler(sys.stdout)  # Log to stdout
 console_formatter = structlog.stdlib.ProcessorFormatter(
     foreign_pre_chain=shared_processors,
-    processor=structlog.processors.JSONRenderer(),  # Use JSON for console temporarily
+    processor=structlog.dev.ConsoleRenderer(),  # Use rich console output
 )
 console_handler.setFormatter(console_formatter)
 
