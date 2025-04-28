@@ -11,7 +11,7 @@ from sqlmodel import Session
 
 # Add src directory to sys.path
 project_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(project_root / 'src'))
+sys.path.insert(0, str(project_root / "src"))
 
 from reg_agent.core.db.connection import get_engine
 from reg_agent.core.db.repositories import DocumentRepository
@@ -56,7 +56,9 @@ async def main():
         print(f"Output: {explore_output_all}")
 
         # --- Test explore_metadata (get distinct values for 'issuing_agency') ---
-        print("\n--- Testing explore_metadata (distinct values for 'issuing_agency') ---")
+        print(
+            "\n--- Testing explore_metadata (distinct values for 'issuing_agency') ---"
+        )
         explore_input_distinct = ExploreMetadataInput(field="issuing_agency")
         explore_output_distinct = await explore_metadata(ctx, explore_input_distinct)
         print(f"Input: {explore_input_distinct}")
@@ -65,19 +67,24 @@ async def main():
         # --- Test query_metadata (find specific document) ---
         print("\n--- Testing query_metadata --- ")
         # Use an identifier known from previous db inspection
-        query_input = QueryMetadataInput(filters={"document_identifier": "2016-CFPB-0013"})
+        query_input = QueryMetadataInput(
+            filters={"document_identifier": "2016-CFPB-0013"}
+        )
         query_output = await query_metadata(ctx, query_input)
         print(f"Input: {query_input}")
         print(f"Output: {query_output}")
 
         # --- Test query_metadata (no matches) ---
         print("\n--- Testing query_metadata (no matches) --- ")
-        query_input_none = QueryMetadataInput(filters={"document_type": "NonExistentType"})
+        query_input_none = QueryMetadataInput(
+            filters={"document_type": "NonExistentType"}
+        )
         query_output_none = await query_metadata(ctx, query_input_none)
         print(f"Input: {query_input_none}")
         print(f"Output: {query_output_none}")
 
     log.info("Tool test script finished.")
 
+
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())

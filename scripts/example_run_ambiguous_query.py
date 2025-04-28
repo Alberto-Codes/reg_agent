@@ -6,19 +6,21 @@ from pathlib import Path
 
 # Add src directory to sys.path to allow absolute imports
 project_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(project_root / 'src'))
+sys.path.insert(0, str(project_root / "src"))
 
 from sqlmodel import Session
 
-from reg_agent.agents.query_agent import query_agent # Import the agent instance
-from reg_agent.config import log # Use configured logger
+from reg_agent.agents.query_agent import query_agent  # Import the agent instance
+from reg_agent.config import log  # Use configured logger
+
 # Adjust DB path relative to project root if needed, or use config
 # from reg_agent.config import settings # If settings has db_path
 from reg_agent.core.db.connection import get_engine
 from reg_agent.core.db.repositories import DocumentRepository
-from reg_agent.tools.duckdb_tool import DuckDBToolDeps # Import dependency class
+from reg_agent.tools.duckdb_tool import DuckDBToolDeps  # Import dependency class
 
 # --- Example Runner Function ---
+
 
 async def run_query_agent_example(user_query: str, repo: DocumentRepository):
     """Runs the query agent with the given query and repository."""
@@ -50,6 +52,7 @@ async def run_query_agent_example(user_query: str, repo: DocumentRepository):
         log.exception("Error running query agent", error=e)
         print(f"\nAn error occurred: {e}")
 
+
 # --- Main Execution Block ---
 
 if __name__ == "__main__":
@@ -80,4 +83,4 @@ if __name__ == "__main__":
         print(f"Running agent with hardcoded ambiguous query: '{query_to_run}'")
         asyncio.run(run_query_agent_example(query_to_run, repository))
 
-    log.info("Script finished.") 
+    log.info("Script finished.")

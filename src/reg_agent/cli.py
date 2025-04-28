@@ -1,13 +1,16 @@
 import argparse
 import asyncio
 from pathlib import Path
-import structlog # For logging in main
+
+import structlog  # For logging in main
+
+from reg_agent.core.db.connection import DEFAULT_DB_FILE
 
 # Directly import the pipeline function
 from reg_agent.pipelines.ingestion.run import run_ingestion_pipeline
-from reg_agent.core.db.connection import DEFAULT_DB_FILE
 
 log = structlog.get_logger()
+
 
 async def main_pipeline_runner(args: argparse.Namespace):
     """Async wrapper to run the pipeline with parsed args."""
@@ -30,6 +33,7 @@ async def main_pipeline_runner(args: argparse.Namespace):
             log.error("Failed to delete existing database file", error=str(e))
             # Use sys.exit for argparse
             import sys
+
             sys.exit(1)
 
     try:
@@ -41,6 +45,7 @@ async def main_pipeline_runner(args: argparse.Namespace):
             error=str(e),
         )
         import sys
+
         sys.exit(1)
 
     log.info("Starting ingestion pipeline...")
@@ -53,6 +58,7 @@ async def main_pipeline_runner(args: argparse.Namespace):
     except Exception as e:
         log.exception("Ingestion pipeline failed with an error.", error=str(e))
         import sys
+
         sys.exit(1)
 
     # Optional: Add result reporting here if needed, similar to Typer version
@@ -61,34 +67,36 @@ async def main_pipeline_runner(args: argparse.Namespace):
     else:
         log.warning("Pipeline did not return results.")
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Ingest files into the document knowledge base."
     )
     parser.add_argument(
-        "source_dir",
-        type=Path,
-        help="Directory containing files to ingest."
+        "source_dir", type=Path, help="Directory containing files to ingest."
     )
     parser.add_argument(
         "--db",
         dest="db_path",
         type=Path,
-        default=None, # Handled later with DEFAULT_DB_FILE
-        help="Path to the DuckDB database file."
+        default=None,  # Handled later with DEFAULT_DB_FILE
+        help="Path to the DuckDB database file.",
     )
     parser.add_argument(
         "--recreate-db",
         action="store_true",
-        help="Delete the existing database file before ingestion."
+        help="Delete the existing database file before ingestion.",
     )
 
     args = parser.parse_args()
 
     # Basic validation for source_dir (argparse doesn't have exists=True)
     if not args.source_dir.is_dir():
-        print(f"Error: Source directory not found or not a directory: {args.source_dir}")
+        print(
+            f"Error: Source directory not found or not a directory: {args.source_dir}"
+        )
         import sys
+
         sys.exit(1)
 
     asyncio.run(main_pipeline_runner(args))

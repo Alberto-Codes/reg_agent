@@ -246,9 +246,10 @@ async def test_run_pipeline_graph_execution_fails(mock_dependencies):
     mock_execute_graph.assert_awaited_once()  # Ensure it was called
     # Check that the orchestrator caught the exception and logged it
     mock_log.exception.assert_called_once_with(
-        "An unexpected error occurred during pipeline orchestration (in run.py).", error=str(test_exception)
+        "An unexpected error occurred during pipeline orchestration (in run.py).",
+        error=str(test_exception),
     )
-    mock_log.error.assert_not_called() # Ensure specific error logs weren't also called
+    mock_log.error.assert_not_called()  # Ensure specific error logs weren't also called
 
 
 @pytest.mark.asyncio

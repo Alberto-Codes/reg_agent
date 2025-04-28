@@ -1,4 +1,3 @@
-import json
 import os
 import traceback
 
@@ -27,9 +26,10 @@ else:
 
         # --- Reopen connection before second query (for debugging) ---
         print("\nDEBUG: Re-establishing connection...")
-        if 'con' in locals() and con: con.close()
+        if "con" in locals() and con:
+            con.close()
         con = duckdb.connect(database=db_path, read_only=True)
-        # --- End Debug --- 
+        # --- End Debug ---
 
         print("\n--- Counts by Subject Institution ---")
         institution_counts = con.execute(
@@ -46,13 +46,13 @@ else:
         print("\nConnection closed.")
 
     except Exception as e:
-        print(f"\n--- ERROR --- ")
+        print("\n--- ERROR --- ")
         print(f"Error querying database: {e}")
         print("Traceback:")
         traceback.print_exc()
-        if 'con' in locals() and con:
+        if "con" in locals() and con:
             try:
                 con.close()
                 print("Connection closed after error.")
-            except: # nosec
+            except:  # nosec
                 pass

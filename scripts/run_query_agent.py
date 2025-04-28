@@ -3,6 +3,7 @@
 import asyncio
 import sys
 from pathlib import Path
+
 import rich
 import structlog
 
@@ -14,16 +15,18 @@ sys.path.insert(0, str(src_path))
 from sqlmodel import Session
 
 # Import the factory function and deps
-from reg_agent.agents.query_agent import create_query_agent, DuckDBToolDeps
-from reg_agent.config import log # Use configured logger
+from reg_agent.agents.query_agent import DuckDBToolDeps, create_query_agent
+from reg_agent.config import log  # Use configured logger
+
 # Adjust DB path relative to project root if needed, or use config
 # from reg_agent.config import settings # If settings has db_path
-from reg_agent.core.db.connection import get_engine # Import DB utils
-from reg_agent.core.db.repositories import DocumentRepository # Import repo
+from reg_agent.core.db.connection import get_engine  # Import DB utils
+from reg_agent.core.db.repositories import DocumentRepository  # Import repo
 
 log = structlog.get_logger()
 
 # --- Main Execution Block ---
+
 
 async def main():
     log.info("Configuring Logfire...")
@@ -31,7 +34,7 @@ async def main():
     # in query_agent.py if ENABLE_LOGFIRE is set
 
     # --- Database and Dependencies Setup ---
-    project_root = Path(__file__).resolve().parents[1] # Get project root
+    project_root = Path(__file__).resolve().parents[1]  # Get project root
     db_dir = project_root / "db"
     db_file = db_dir / "regulations.db"
     db_dir.mkdir(exist_ok=True)
@@ -64,5 +67,6 @@ async def main():
         print("-----------------")
         log.info("Script finished.")
 
+
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())

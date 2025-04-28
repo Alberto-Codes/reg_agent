@@ -251,12 +251,14 @@ class DocumentRepository(AbstractDocumentRepository):
                 "ORDER BY key"
             )
             results = self.session.execute(query).scalars().all()
-            log.info("Found queryable fields dynamically", count=len(results), fields=results)
-            return list(results) # Ensure it returns a list
+            log.info(
+                "Found queryable fields dynamically", count=len(results), fields=results
+            )
+            return list(results)  # Ensure it returns a list
         except Exception as e:
             log.exception("Error dynamically fetching queryable fields", error=str(e))
             # Return empty list or re-raise depending on desired error handling
-            return [] # Or raise e
+            return []  # Or raise e
 
     def get_records_by_status(
         self, status: FileStatus | List[FileStatus]

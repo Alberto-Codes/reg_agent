@@ -71,7 +71,8 @@ async def run_ingestion_pipeline(source_dir: Path, db_file: Path = DEFAULT_DB_FI
         # Catch errors that might occur *outside* the graph execution call itself
         # (e.g., during the initial source_dir check or if execute_ingestion_graph raises unexpectedly)
         log.exception(
-            "An unexpected error occurred during pipeline orchestration (in run.py).", error=str(e)
+            "An unexpected error occurred during pipeline orchestration (in run.py).",
+            error=str(e),
         )
         # print(f"ERROR in run_ingestion_pipeline: {e!r}")
         raise
